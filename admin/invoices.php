@@ -20,6 +20,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+require_once dirname(__DIR__) . '/includes/Fatura.php';
 Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
@@ -52,106 +53,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['odendi'])) {
     Guvenlik::zorunlu();
     $id = (int) ($_POST['invoice_id'] ?? 0);
 
-    $fatura = Database::fetch(
-        "SELECT i.*, c.first_name, c.last_name, c.email
-           FROM invoices i
-           LEFT JOIN clients c ON c.id = i.client_id
-          WHERE i.id = ?",
-        [$id]
-    );
-
-    /* Kayıt yoksa eskiden $invoice['total'] okunurken hata veriyordu */
-    if (!$fatura) {
-        faturaMesaj('error', 'Fatura bulunamadı.');
-    }
-    if ($fatura['status'] === 'paid') {
-        faturaMesaj('uyari', 'Bu fatura zaten ödenmiş görünüyor.');
-    }
-
-    $yontem = (string) ($_POST['yontem'] ?? $fatura['payment_method'] ?? 'bank_transfer');
-    $tutar = (float) $fatura['total'];
-    $db = Database::getInstance();
-
     try {
-        $db->beginTransaction();
-
-        Database::query(
-            "UPDATE invoices SET status = 'paid', amount_paid = ?, paid_date = NOW(),
-                    payment_method = ? WHERE id = ?",
-            [$tutar, $yontem, $id]
-        );
-
-        /* Ödeme kaydı. Bu satır olmadığı için Ödemeler sayfası hiç
-           veri görmüyordu. */
-        Database::insert('transactions', [
-            'client_id' => (int) $fatura['client_id'],
-            'invoice_id' => $id,
-            'transaction_id' => 'MAN-' . $id . '-' . date('YmdHis'),
-            'gateway' => $yontem,
-            'type' => 'payment',
-            'amount' => $tutar,
-            'currency' => (string) ($fatura['currency'] ?: 'TRY'),
-            'status' => 'success',
-            'description' => 'Fatura ' . $fatura['invoice_number'] . ' panelden ödendi olarak işaretlendi.',
-        ]);
-
-        $db->commit();
-    } catch (Throwable $e) {
-        if ($db->inTransaction()) {
-            $db->rollBack();
-        }
-        error_log('Fatura ödendi işaretlenemedi: ' . $e->getMessage());
-        faturaMesaj('error', 'Fatura güncellenemedi, hiçbir değişiklik kaydedilmedi.');
+        $fatura = Fatura::odendiIsaretle($id, (string) ($_POST['yontem'] ?? 'bank_transfer'));
+        faturaMesaj('success', $fatura['invoice_number']
+            . ' ödendi olarak işaretlendi ve ödeme kaydı oluşturuldu.');
+    } catch (RuntimeException $e) {
+        faturaMesaj('error', $e->getMessage());
     }
-
-    /* Aşağıdakiler para işlemi değil; biri patlarsa fatura yine ödenmiş kalır */
-    try {
-        require_once dirname(__DIR__) . '/includes/Affiliate.php';
-        Affiliate::processCommission((int) $fatura['client_id'], null, $id, $tutar);
-    } catch (Throwable $e) {
-        error_log('Satış ortaklığı komisyonu işlenemedi: ' . $e->getMessage());
-    }
-
-    try {
-        require_once dirname(__DIR__) . '/includes/ClientLog.php';
-        ClientLog::invoicePaid(
-            (int) $fatura['client_id'],
-            (string) $fatura['invoice_number'],
-            $tutar,
-            (string) ($fatura['currency'] ?? 'TRY')
-        );
-    } catch (Throwable $e) {
-        error_log('Müşteri logu yazılamadı: ' . $e->getMessage());
-    }
-
-    if (!empty($fatura['email'])) {
-        try {
-            require_once dirname(__DIR__) . '/includes/Mail.php';
-            Mail::sendTemplate('invoice_paid', (string) $fatura['email'], [
-                'client_name' => trim((string) $fatura['first_name'] . ' ' . (string) $fatura['last_name']),
-                'invoice_id' => (string) $fatura['invoice_number'],
-                'payment_amount' => number_format($tutar, 2, ',', '.'),
-                'payment_date' => date('d.m.Y H:i'),
-            ], (string) $fatura['first_name']);
-        } catch (Throwable $e) {
-            error_log('Ödeme bildirimi gönderilemedi: ' . $e->getMessage());
-        }
-    }
-
-    faturaMesaj('success', $fatura['invoice_number'] . ' ödendi olarak işaretlendi ve ödeme kaydı oluşturuldu.');
 }
 
 /* ---------- İptal ---------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['iptal'])) {
     Guvenlik::zorunlu();
-    $id = (int) ($_POST['invoice_id'] ?? 0);
 
     try {
-        Database::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?", [$id]);
+        Fatura::iptalEt((int) ($_POST['invoice_id'] ?? 0));
         faturaMesaj('uyari', 'Fatura iptal edildi.');
-    } catch (Throwable $e) {
-        error_log('Fatura iptal edilemedi: ' . $e->getMessage());
-        faturaMesaj('error', 'Fatura iptal edilemedi.');
+    } catch (RuntimeException $e) {
+        faturaMesaj('error', $e->getMessage());
     }
 }
 
