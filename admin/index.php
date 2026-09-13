@@ -635,6 +635,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
         
         <form method="POST" autocomplete="off">
+            <?= Guvenlik::alan() ?>
             <div class="form-group">
                 <label><span>👤</span> Kullanıcı Adı veya E-posta</label>
                 <div class="input-wrapper">

@@ -51,6 +51,30 @@ final class Guvenlik
         }
 
         session_start();
+
+        self::panelPostKoru();
+    }
+
+    /**
+     * Yönetim panelindeki her POST isteğinde belirteci zorunlu kılar.
+     *
+     * Sayfalar POST işleyicisini header.php'den önce çalıştırdığı için
+     * kontrolün burada, oturum açılır açılmaz yapılması gerekiyor.
+     * Belirteç formlara footer.php tarafından otomatik gömülür.
+     */
+    private static function panelPostKoru(): void
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            return;
+        }
+        $betik = str_replace(chr(92), '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+        if (!str_contains($betik, '/admin/')) {
+            return;
+        }
+
+        if (!self::dogrula()) {
+            self::zorunlu();
+        }
     }
 
     /** Girişten sonra oturum kimliğini yeniler (oturum sabitlemeye karşı) */
@@ -81,6 +105,37 @@ final class Guvenlik
     {
         return '<input type="hidden" name="_token" value="'
             . htmlspecialchars(self::token(), ENT_QUOTES, 'UTF-8') . '">';
+    }
+
+    /**
+     * Panel çıktısındaki POST formlarına gizli belirteç alanını gömer.
+     *
+     * Kırk küsur sayfanın formlarını tek tek elden geçirmek yerine
+     * footer.php tüm çıktıyı buradan geçirir. Sayfa kendi alanını zaten
+     * koymuşsa iki alan olur; ikisinin değeri aynı olduğu için sorun çıkmaz.
+     * Dış sunucuya giden formlar (ödeme sağlayıcıları) atlanır.
+     */
+    public static function formlaraBelirtecEkle(string $html): string
+    {
+        $alan = self::alan();
+
+        return (string) preg_replace_callback(
+            '/<form\b[^>]*>/i',
+            static function (array $e) use ($alan): string {
+                $etiket = $e[0];
+
+                if (!preg_match('/method\s*=\s*["\']?post/i', $etiket)) {
+                    return $etiket;
+                }
+
+                if (preg_match('/action\s*=\s*["\']?(https?:)?\/\//i', $etiket)) {
+                    return $etiket;
+                }
+
+                return $etiket . $alan;
+            },
+            $html
+        ) ?: $html;
     }
 
     /** Gelen isteğin belirtecini doğrular */

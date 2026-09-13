@@ -3,6 +3,38 @@
     </div><!-- /.yonetim -->
 
     <script>
+        /* Panel içindeki her POST isteğine CSRF belirtecini ekler.
+           Sayfalardaki fetch çağrılarını tek tek düzenlemek yerine
+           fetch'i bir kez sarmalıyoruz. */
+        (function () {
+            var belirtec = document.querySelector('meta[name="csrf-token"]');
+            if (!belirtec || !window.fetch) return;
+            belirtec = belirtec.content;
+
+            var asil = window.fetch;
+            window.fetch = function (kaynak, secenek) {
+                secenek = secenek || {};
+                var yontem = (secenek.method || 'GET').toUpperCase();
+                if (yontem === 'GET' || yontem === 'HEAD') {
+                    return asil(kaynak, secenek);
+                }
+
+                /* Yalnızca kendi sunucumuza giden isteklere ekle */
+                var adres = typeof kaynak === 'string' ? kaynak : (kaynak && kaynak.url) || '';
+                try {
+                    if (new URL(adres, location.href).origin !== location.origin) {
+                        return asil(kaynak, secenek);
+                    }
+                } catch (e) { /* göreli adres: bizimdir */ }
+
+                var basliklar = new Headers(secenek.headers || {});
+                if (!basliklar.has('X-CSRF-Token')) {
+                    basliklar.set('X-CSRF-Token', belirtec);
+                }
+                secenek.headers = basliklar;
+                return asil(kaynak, secenek);
+            };
+        })();
         (function () {
             /* ---------- Bölümleri aç/kapa ----------
                Yalnızca açık sayfanın bölümü açık başlar; kullanıcının
@@ -195,3 +227,7 @@
 </body>
 
 </html>
+<?php
+/* Tamponu kapatırken formlara belirteci göm. */
+$yCikti = ob_get_clean();
+echo $yCikti === false ? '' : Guvenlik::formlaraBelirtecEkle($yCikti);

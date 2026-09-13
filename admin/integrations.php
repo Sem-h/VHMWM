@@ -12,6 +12,13 @@ require_once __DIR__ . '/../includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
+/* Oturum kontrolü burada; header.php sayfanın sonunda çağrıldığı için
+   oradaki kontrol POST işleyicisini durdurmuyordu. */
+if (!isset($_SESSION["admin_id"])) {
+    header("Location: index.php");
+    exit;
+}
+
 $pageTitle = 'Entegrasyonlar';
 $currentPage = 'integrations';
 

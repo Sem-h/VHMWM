@@ -8,6 +8,13 @@ require_once dirname(__DIR__) . '/includes/ESXi.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
+/* Oturum kontrolü burada; header.php sayfanın sonunda çağrıldığı için
+   oradaki kontrol POST işleyicisini durdurmuyordu. */
+if (!isset($_SESSION["admin_id"])) {
+    header("Location: index.php");
+    exit;
+}
+
 $pageTitle = 'Hizmet Detayı';
 $currentPage = 'services';
 $db = Database::getInstance();

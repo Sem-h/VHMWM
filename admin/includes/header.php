@@ -65,6 +65,11 @@ foreach ($yMenu[$yAktifBolum]['ogeler'] ?? [] as $oge) {
 $yAdmin = (string) ($_SESSION['admin_name'] ?? $_SESSION['admin_username'] ?? 'Yönetici');
 $yBasHarf = mb_strtoupper(mb_substr(trim($yAdmin), 0, 1), 'UTF-8');
 $ySiteAdi = Settings::get('site_name', defined('SITE_NAME') ? SITE_NAME : 'VHM');
+
+/* Çıktı tamponlanır; footer.php kapatırken POST formlarına CSRF
+   belirtecini gömer. Böylece her sayfanın formunu tek tek düzenlemek
+   gerekmiyor. */
+ob_start();
 ?>
 <!DOCTYPE html>
 <html lang="tr" data-tema="<?= htmlspecialchars($yTema) ?>">
