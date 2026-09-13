@@ -1,11 +1,25 @@
 <?php
 /**
- * WHMVM - Ürün Yönetimi
+ * VHM - Ürünler
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - Kısa ad preg_replace('/[^a-zA-Z0-9]+/', '-', $ad) ile üretiliyordu;
+ *     Türkçe harfler siliniyor, "Ürün Paketi" → "-r-n-paketi" oluyordu.
+ *   - slug sütunu UNIQUE; aynı adla ikinci ürün eklenince yakalanmamış
+ *     SQL hatası dönüyordu.
+ *   - Hiçbir alan doğrulanmıyordu: boş ad, harf içeren fiyat kabul ediliyordu.
+ *   - Silme, ürünü kullanan hizmet olup olmadığına bakmıyordu.
+ *     services.product_id ON DELETE SET NULL olduğu için müşterinin aktif
+ *     hizmeti "Ürün silinmiş" hâline geliyor, ödeme almaya devam ediyordu.
+ *   - PRG yoktu; yenilemede aynı ürün tekrar ekleniyordu.
  */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+require_once dirname(__DIR__) . '/includes/Katalog.php';
 Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
@@ -13,886 +27,726 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
+function urunDon(string $tip, string $metin): never
+{
+    $_SESSION['ur_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: products.php' . (!empty($_GET['grup']) ? '?grup=' . (int) $_GET['grup'] : ''));
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    Guvenlik::zorunlu();
+
+    /* ---------- Silme ---------- */
+    if (isset($_POST['sil'])) {
+        $urunId = (int) $_POST['sil'];
+        $urun = Database::fetch("SELECT name FROM products WHERE id = ?", [$urunId]);
+
+        if (!$urun) {
+            urunDon('error', 'Ürün bulunamadı.');
+        }
+
+        $kullanim = Katalog::urunKullanimi($urunId);
+        if ($kullanim > 0) {
+            urunDon(
+                'error',
+                $urun['name'] . ' silinemez: ' . $kullanim . ' hizmet bu ürünü kullanıyor. '
+                . 'Yeni satışı durdurmak için ürünü pasife alın.'
+            );
+        }
+
+        try {
+            Database::query("DELETE FROM products WHERE id = ?", [$urunId]);
+        } catch (Throwable $e) {
+            error_log('Ürün silinemedi: ' . $e->getMessage());
+            urunDon('error', 'Ürün silinemedi.');
+        }
+
+        urunDon('success', $urun['name'] . ' silindi.');
+    }
+
+    /* ---------- Etkin / pasif ---------- */
+    if (isset($_POST['durum_degistir'])) {
+        $urunId = (int) $_POST['durum_degistir'];
+        $urun = Database::fetch("SELECT name, is_active FROM products WHERE id = ?", [$urunId]);
+
+        if (!$urun) {
+            urunDon('error', 'Ürün bulunamadı.');
+        }
+
+        $yeni = (int) $urun['is_active'] === 1 ? 0 : 1;
+        Database::query("UPDATE products SET is_active = ? WHERE id = ?", [$yeni, $urunId]);
+
+        urunDon('success', $urun['name'] . ($yeni === 1 ? ' etkinleştirildi.' : ' pasife alındı.'));
+    }
+
+    /* ---------- Ekleme ---------- */
+    if (isset($_POST['ekle'])) {
+        $ad = trim((string) ($_POST['name'] ?? ''));
+
+        if ($ad === '') {
+            urunDon('error', 'Ürün adı boş olamaz.');
+        }
+        if (mb_strlen($ad) > 255) {
+            urunDon('error', 'Ürün adı çok uzun (en fazla 255 karakter).');
+        }
+
+        $grupId = (int) ($_POST['group_id'] ?? 0) ?: null;
+        $tip = 'other';
+
+        if ($grupId !== null) {
+            $grup = Database::fetch("SELECT type FROM product_groups WHERE id = ?", [$grupId]);
+            if (!$grup) {
+                urunDon('error', 'Seçilen ürün grubu bulunamadı.');
+            }
+            if (isset(Katalog::URUN_TIPLERI[$grup['type']])) {
+                $tip = (string) $grup['type'];
+            }
+        }
+
+        /* Grup seçilmemişse tür elle verilebilir */
+        if ($grupId === null && isset(Katalog::URUN_TIPLERI[$_POST['type'] ?? ''])) {
+            $tip = (string) $_POST['type'];
+        }
+
+        try {
+            $fiyatlar = [];
+            foreach (array_keys(Katalog::DONEM_SUTUNLARI) as $sutun) {
+                $fiyatlar[$sutun] = Katalog::fiyatOku($_POST[$sutun] ?? '');
+            }
+            $kurulum = Katalog::fiyatOku($_POST['setup_fee'] ?? '') ?? 0.0;
+        } catch (RuntimeException $e) {
+            urunDon('error', $e->getMessage());
+        }
+
+        if (!array_filter($fiyatlar, static fn($f) => $f !== null)) {
+            urunDon('error', 'En az bir dönem için fiyat girin.');
+        }
+
+        try {
+            $yeniId = Database::insert('products', array_merge([
+                'name' => $ad,
+                'slug' => Katalog::benzersizSlug($ad, 'products'),
+                'type' => $tip,
+                'group_id' => $grupId,
+                'description' => trim((string) ($_POST['description'] ?? '')),
+                'setup_fee' => $kurulum,
+                'is_active' => isset($_POST['is_active']) ? 1 : 0,
+            ], $fiyatlar));
+        } catch (Throwable $e) {
+            error_log('Ürün eklenemedi: ' . $e->getMessage());
+            urunDon('error', 'Ürün eklenemedi.');
+        }
+
+        $_SESSION['ur_mesaj'] = ['tip' => 'success', 'metin' => $ad . ' eklendi. Ayrıntıları tamamlayabilirsiniz.'];
+        header('Location: product-edit.php?id=' . $yeniId);
+        exit;
+    }
+
+    urunDon('error', 'Tanımsız işlem.');
+}
+
+$mesaj = null;
+if (!empty($_SESSION['ur_mesaj'])) {
+    $mesaj = $_SESSION['ur_mesaj'];
+    unset($_SESSION['ur_mesaj']);
+}
+
+$gruplar = Database::fetchAll("SELECT * FROM product_groups ORDER BY order_priority, name");
+
+$grupSuzgec = (int) ($_GET['grup'] ?? 0);
+$tipSuzgec = (string) ($_GET['tip'] ?? '');
+$arama = trim((string) ($_GET['q'] ?? ''));
+$durumSuzgec = (string) ($_GET['durum'] ?? '');
+
+$kosul = [];
+$par = [];
+
+if ($grupSuzgec > 0) {
+    $kosul[] = 'p.group_id = ?';
+    $par[] = $grupSuzgec;
+}
+if (isset(Katalog::URUN_TIPLERI[$tipSuzgec])) {
+    $kosul[] = 'p.type = ?';
+    $par[] = $tipSuzgec;
+}
+if ($durumSuzgec === 'etkin' || $durumSuzgec === 'pasif') {
+    $kosul[] = 'p.is_active = ?';
+    $par[] = $durumSuzgec === 'etkin' ? 1 : 0;
+}
+if ($arama !== '') {
+    $kosul[] = '(p.name LIKE ? OR p.slug LIKE ?)';
+    $par[] = '%' . $arama . '%';
+    $par[] = '%' . $arama . '%';
+}
+
+$nerede = $kosul ? 'WHERE ' . implode(' AND ', $kosul) : '';
+
+$urunler = Database::fetchAll(
+    "SELECT p.*, g.name AS grup_adi,
+            (SELECT COUNT(*) FROM services s
+              WHERE s.product_id = p.id AND s.status IN ('pending','active','suspended')) AS kullanim
+       FROM products p
+       LEFT JOIN product_groups g ON g.id = p.group_id
+       $nerede
+       ORDER BY g.order_priority, p.order_priority, p.name",
+    $par
+);
+
+$toplamUrun = (int) Database::fetchColumn("SELECT COUNT(*) FROM products");
+$etkinUrun = (int) Database::fetchColumn("SELECT COUNT(*) FROM products WHERE is_active = 1");
+$satilan = (int) Database::fetchColumn(
+    "SELECT COUNT(DISTINCT product_id) FROM services WHERE status IN ('pending','active','suspended')"
+);
+
+$tipIkon = [
+    'hosting' => 'fa-globe', 'vps' => 'fa-server', 'vds' => 'fa-hard-drive',
+    'dedicated' => 'fa-database', 'domain' => 'fa-at', 'ssl' => 'fa-lock',
+    'other' => 'fa-cube',
+];
+
 $pageTitle = 'Ürünler';
 $currentPage = 'products';
-$db = Database::getInstance();
-$message = '';
-$messageType = 'success';
-
-// Silme
-/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
-    Guvenlik::zorunlu();
-    Database::query("DELETE FROM products WHERE id = ?", [$_POST['delete']]);
-    $message = 'Ürün silindi.';
-}
-
-// Ekleme
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
-    $groupId = $_POST['group_id'] ?: null;
-    
-    // Grubun türünü al
-    $type = 'other';
-    if ($groupId) {
-        $groupType = Database::fetchColumn("SELECT type FROM product_groups WHERE id = ?", [$groupId]);
-        if ($groupType) {
-            $type = $groupType;
-        }
-    }
-    
-    $slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $_POST['name']));
-    Database::query(
-        "INSERT INTO products (name, slug, type, group_id, description, price_monthly, price_annually, setup_fee, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            $_POST['name'],
-            $slug,
-            $type,
-            $groupId,
-            $_POST['description'] ?? '',
-            $_POST['price_monthly'] ?: null,
-            $_POST['price_annually'] ?: null,
-            $_POST['setup_fee'] ?: 0,
-            isset($_POST['is_active']) ? 1 : 0
-        ]
-    );
-    $message = 'Ürün eklendi!';
-}
-
-// Grupları çek
-$groups = Database::fetchAll("SELECT * FROM product_groups ORDER BY order_priority");
-
-// Ürünleri çek
-$products = Database::fetchAll("
-    SELECT p.*, g.name as group_name, g.type as group_type, g.slug as group_slug
-    FROM products p 
-    LEFT JOIN product_groups g ON p.group_id = g.id 
-    ORDER BY g.order_priority, p.order_priority, p.name
-");
-
-// İstatistikler
-$totalProducts = count($products);
-$activeProducts = count(array_filter($products, fn($p) => $p['is_active']));
-$totalGroups = count($groups);
-
-// Tür bazlı sayılar
-$typeStats = [];
-foreach ($products as $p) {
-    $type = $p['group_type'] ?? $p['type'] ?? 'other';
-    $typeStats[$type] = ($typeStats[$type] ?? 0) + 1;
-}
-
-include 'includes/header.php';
+require_once __DIR__ . '/includes/header.php';
 ?>
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-/* Stats Grid */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
-    margin-bottom: 25px;
-}
-
-@media (max-width: 1200px) {
-    .stats-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-@media (max-width: 576px) {
-    .stats-grid { grid-template-columns: 1fr; }
-}
-
-.stat-card {
-    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 24px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    transition: all 0.3s;
-}
-
-.stat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-}
-
-.stat-icon {
-    width: 60px;
-    height: 60px;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    color: white;
-}
-
-.stat-icon.blue { background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%); }
-.stat-icon.green { background: linear-gradient(135deg, #10b981 0%, #34d399 100%); }
-.stat-icon.orange { background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); }
-.stat-icon.purple { background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%); }
-
-.stat-info h3 {
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--dark);
-    margin-bottom: 4px;
-}
-
-.stat-info p {
-    font-size: 13px;
-    color: var(--gray);
-    margin: 0;
-}
-
-/* Filter Tabs */
-.filter-section {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    gap: 15px;
-}
-
-.filter-tabs {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.filter-tab {
-    padding: 10px 18px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--y-yuzey);
-    color: var(--gray);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.filter-tab:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.filter-tab.active {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: white;
-}
-
-.filter-tab .count {
-    background: rgba(0,0,0,0.1);
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 11px;
-}
-
-.filter-tab.active .count {
-    background: rgba(255,255,255,0.2);
-}
-
-.search-box {
-    position: relative;
-}
-
-.search-box input {
-    padding: 10px 15px 10px 40px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    width: 250px;
-    font-size: 14px;
-    transition: all 0.3s;
-}
-
-.search-box input:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    outline: none;
-}
-
-.search-box i {
-    position: absolute;
-    left: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--gray);
-}
-
-/* Product Cards View */
-.view-toggle {
-    display: flex;
-    gap: 5px;
-    background: var(--y-yuzey-2);
-    padding: 4px;
-    border-radius: 8px;
-}
-
-.view-btn {
-    padding: 8px 12px;
-    border: none;
-    background: transparent;
-    color: var(--gray);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.view-btn.active {
-    background: var(--y-yuzey);
-    color: var(--primary);
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-}
-
-/* Products Grid */
-.products-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 20px;
-}
-
-.product-card {
-    background: var(--y-yuzey);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    overflow: hidden;
-    transition: all 0.3s;
-}
-
-.product-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
-    border-color: var(--primary);
-}
-
-.product-card-header {
-    padding: 20px;
-    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey-2) 100%);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-}
-
-.product-card-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 22px;
-    color: white;
-}
-
-.product-card-icon.hosting { background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%); }
-.product-card-icon.vps { background: linear-gradient(135deg, #10b981 0%, #34d399 100%); }
-.product-card-icon.vds { background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); }
-.product-card-icon.dedicated { background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%); }
-.product-card-icon.domain { background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%); }
-.product-card-icon.ssl { background: linear-gradient(135deg, #10b981 0%, #34d399 100%); }
-.product-card-icon.other { background: linear-gradient(135deg, #64748b 0%, #94a3b8 100%); }
-
-.product-card-status {
-    display: flex;
-    gap: 6px;
-}
-
-.product-card-body {
-    padding: 20px;
-}
-
-.product-card-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--dark);
-    margin-bottom: 6px;
-}
-
-.product-card-group {
-    font-size: 13px;
-    color: var(--gray);
-    margin-bottom: 15px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.product-card-prices {
-    display: flex;
-    gap: 15px;
-    margin-bottom: 15px;
-}
-
-.price-item {
-    flex: 1;
-    text-align: center;
-    padding: 12px;
-    background: var(--y-yuzey-2);
-    border-radius: 10px;
-}
-
-.price-item .label {
-    font-size: 11px;
-    color: var(--gray);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 4px;
-}
-
-.price-item .value {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--primary);
-}
-
-.price-item .value.muted {
-    color: var(--gray);
-    font-size: 14px;
-}
-
-.product-card-actions {
-    display: flex;
-    gap: 10px;
-    padding-top: 15px;
-    border-top: 1px solid var(--border);
-}
-
-.product-card-actions .btn {
-    flex: 1;
-    justify-content: center;
-    padding: 10px;
-    font-size: 13px;
-}
-
-/* Enhanced Table */
-.products-table {
-    display: none;
-}
-
-.products-table.active {
-    display: block;
-}
-
-.products-grid.active {
-    display: grid;
-}
-
-.table-enhanced {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-}
-
-.table-enhanced thead th {
-    background: var(--y-yuzey-2);
-    padding: 14px 16px;
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--gray);
-    border-bottom: 2px solid var(--border);
-    text-align: left;
-}
-
-.table-enhanced tbody tr {
-    transition: all 0.3s;
-}
-
-.table-enhanced tbody tr:hover {
-    background: var(--y-yuzey-2);
-}
-
-.table-enhanced tbody td {
-    padding: 16px;
-    border-bottom: 1px solid var(--border);
-    vertical-align: middle;
-}
-
-.product-info {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-}
-
-.product-info-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    color: white;
-    flex-shrink: 0;
-}
-
-.product-info-text h4 {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--dark);
-    margin-bottom: 3px;
-}
-
-.product-info-text span {
-    font-size: 12px;
-    color: var(--gray);
-}
-
-.price-cell {
-    font-weight: 600;
-    color: var(--dark);
-}
-
-.price-cell.muted {
-    color: var(--gray);
-    font-weight: 400;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 8px;
-}
-
-/* Modal Enhancements */
-.modal.show { display: flex; }
-
-.modal-content {
-    background: var(--y-yuzey);
-    border-radius: 16px;
-    max-width: 550px;
-    width: 100%;
-}
-
-.modal-header {
-    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey-2) 100%);
-    padding: 20px 25px;
-    border-radius: 16px 16px 0 0;
-    border-bottom: 1px solid var(--border);
-}
-
-.modal-header h3 {
-    color: var(--dark);
-    font-size: 18px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.modal-body {
-    padding: 25px;
-}
-
-.modal-body .form-group label {
-    color: var(--dark);
-    font-weight: 600;
-    margin-bottom: 8px;
-    display: block;
-}
-
-.modal-footer {
-    padding: 20px 25px;
-    background: var(--y-yuzey-2);
-    border-radius: 0 0 16px 16px;
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-}
-
-/* Empty State */
-.empty-state-modern {
-    text-align: center;
-    padding: 60px 20px;
-}
-
-.empty-state-modern .icon {
-    width: 100px;
-    height: 100px;
-    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 25px;
-    font-size: 40px;
-}
-
-.empty-state-modern h3 {
-    font-size: 20px;
-    color: var(--dark);
-    margin-bottom: 10px;
-}
-
-.empty-state-modern p {
-    color: var(--gray);
-    margin-bottom: 25px;
-}
-
-/* Badge */
-.badge-sm {
-    padding: 4px 10px;
-    font-size: 11px;
-    border-radius: 6px;
-}
-
-.badge-active {
-    background: #d1fae5;
-    color: #065f46;
-}
-
-.badge-inactive {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.badge-featured {
-    background: #fef3c7;
-    color: #92400e;
-}
+    /* ==========================================
+       Ürünler - ur
+       ========================================== */
+    .ur-ozet {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+    }
+
+    .ur-ozet-kart {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+    }
+
+    .ur-ozet-ikon {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 14px;
+    }
+
+    .ur-ozet-kart b {
+        display: block;
+        font-size: 19px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--y-metin);
+        line-height: 1.2;
+    }
+
+    .ur-ozet-kart span {
+        font-size: 12px;
+        color: var(--y-metin-3);
+    }
+
+    .ur-arac {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 9px;
+        padding: 12px 14px;
+        margin-bottom: 18px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+    }
+
+    .ur-arac form {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 9px;
+        margin: 0;
+        flex: 1;
+    }
+
+    .ur-arac .form-control {
+        width: auto;
+        min-width: 130px;
+    }
+
+    .ur-arac input[type="search"] {
+        flex: 1;
+        min-width: 180px;
+    }
+
+    .ur-grup {
+        margin-bottom: 18px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
+
+    .ur-grup-bas {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .ur-grup-bas h3 {
+        font-size: 12.5px;
+        font-weight: 700;
+    }
+
+    .ur-grup-bas span {
+        font-size: 12px;
+        color: var(--y-metin-3);
+    }
+
+    .ur-satir {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 13px 16px;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+    }
+
+    .ur-satir:last-child {
+        border-bottom: none;
+    }
+
+    .ur-satir:hover {
+        background: var(--y-yuzey-2);
+    }
+
+    .ur-satir.pasif {
+        opacity: .62;
+    }
+
+    .ur-ikon {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-2);
+        font-size: 13px;
+    }
+
+    .ur-satir.pasif .ur-ikon {
+        background: var(--y-yuzey-2);
+    }
+
+    .ur-orta {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ur-orta b {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .ur-orta a {
+        color: inherit;
+    }
+
+    .ur-orta a:hover {
+        color: var(--y-primary);
+    }
+
+    .ur-alt {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+    }
+
+    .ur-etiket {
+        padding: 2px 8px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 999px;
+        font-size: 11px;
+        color: var(--y-metin-3);
+    }
+
+    .ur-fiyat {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .ur-fiyat b {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--y-metin);
+    }
+
+    .ur-fiyat span {
+        display: block;
+        margin-top: 2px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .ur-eylem {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    .ur-eylem form {
+        margin: 0;
+    }
+
+    .ur-dugme {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 7px;
+        background: var(--y-yuzey);
+        color: var(--y-metin-3);
+        font-size: 12px;
+        cursor: pointer;
+        transition: .15s;
+    }
+
+    .ur-dugme:hover {
+        border-color: var(--y-primary);
+        color: var(--y-primary);
+    }
+
+    .ur-dugme.tehlike:hover {
+        border-color: var(--y-danger);
+        color: var(--y-danger);
+    }
+
+    .ur-bos {
+        padding: 40px 16px;
+        text-align: center;
+        color: var(--y-metin-3);
+    }
+
+    .ur-bos i {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 26px;
+        opacity: .4;
+    }
+
+    /* Yeni ürün kutusu */
+    .ur-yeni {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
+
+    .ur-yeni-govde {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        padding: 16px;
+    }
+
+    .ur-alan label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .ur-yeni-alt {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 12px 16px;
+        border-top: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .ur-onay {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12.5px;
+        color: var(--y-metin-2);
+        cursor: pointer;
+    }
+
+    @media (max-width: 700px) {
+        .ur-satir {
+            flex-wrap: wrap;
+        }
+
+        .ur-fiyat {
+            text-align: left;
+        }
+    }
 </style>
 
-<?php if ($message): ?>
-    <div class="alert alert-<?= $messageType ?>">
-        <i class="fas fa-check-circle"></i>
-        <?= htmlspecialchars($message) ?>
+<div class="page-header">
+    <div>
+        <h1>Ürünler</h1>
+        <p>Satışa açtığınız paketler ve fiyatları</p>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="urYeniAc()">
+        <i class="fas fa-plus"></i> Yeni ürün
+    </button>
+</div>
+
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= htmlspecialchars($mesaj['tip']) ?>">
+        <?= htmlspecialchars($mesaj['metin']) ?>
     </div>
 <?php endif; ?>
 
-<!-- Stats -->
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-icon blue">
-            <i class="fas fa-box"></i>
-        </div>
-        <div class="stat-info">
-            <h3><?= $totalProducts ?></h3>
-            <p>Toplam Ürün</p>
-        </div>
+<div class="ur-ozet">
+    <div class="ur-ozet-kart">
+        <span class="ur-ozet-ikon"><i class="fas fa-cubes"></i></span>
+        <span><b><?= $toplamUrun ?></b><span>Toplam ürün</span></span>
     </div>
-    <div class="stat-card">
-        <div class="stat-icon green">
-            <i class="fas fa-check-circle"></i>
-        </div>
-        <div class="stat-info">
-            <h3><?= $activeProducts ?></h3>
-            <p>Aktif Ürün</p>
-        </div>
+    <div class="ur-ozet-kart">
+        <span class="ur-ozet-ikon"><i class="fas fa-circle-check"></i></span>
+        <span><b><?= $etkinUrun ?></b><span>Satışa açık</span></span>
     </div>
-    <div class="stat-card">
-        <div class="stat-icon orange">
-            <i class="fas fa-folder"></i>
-        </div>
-        <div class="stat-info">
-            <h3><?= $totalGroups ?></h3>
-            <p>Ürün Grubu</p>
-        </div>
+    <div class="ur-ozet-kart">
+        <span class="ur-ozet-ikon"><i class="fas fa-layer-group"></i></span>
+        <span><b><?= count($gruplar) ?></b><span>Ürün grubu</span></span>
     </div>
-    <div class="stat-card">
-        <div class="stat-icon purple">
-            <i class="fas fa-globe"></i>
-        </div>
-        <div class="stat-info">
-            <h3><?= $typeStats['hosting'] ?? 0 ?></h3>
-            <p>Hosting Ürünü</p>
-        </div>
+    <div class="ur-ozet-kart">
+        <span class="ur-ozet-ikon"><i class="fas fa-cart-shopping"></i></span>
+        <span><b><?= $satilan ?></b><span>Satılmış ürün</span></span>
     </div>
 </div>
 
-<!-- Filter & Actions -->
-<div class="card" style="margin-bottom: 25px;">
-    <div class="card-header">
-        <h3><i class="fas fa-box" style="color: var(--primary); margin-right: 10px;"></i> Ürünler</h3>
-        <a href="product-add.php" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Yeni Ürün
-        </a>
-    </div>
-    <div class="card-body" style="padding: 15px 20px;">
-        <div class="filter-section">
-            <div class="filter-tabs">
-                <button class="filter-tab active" data-filter="all">
-                    <i class="fas fa-th"></i> Tümü
-                    <span class="count"><?= $totalProducts ?></span>
-                </button>
-                <?php foreach ($groups as $group): 
-                    $count = count(array_filter($products, fn($p) => $p['group_id'] == $group['id']));
-                    if ($count > 0):
-                        $emoji = match($group['type'] ?? 'other') {
-                            'hosting' => '🌐',
-                            'vps' => '💻',
-                            'vds' => '🖥️',
-                            'dedicated' => '🏢',
-                            'domain' => '🔗',
-                            'ssl' => '🔒',
-                            default => '📦'
-                        };
-                ?>
-                    <button class="filter-tab" data-filter="group-<?= $group['id'] ?>">
-                        <?= $emoji ?> <?= htmlspecialchars($group['name']) ?>
-                        <span class="count"><?= $count ?></span>
-                    </button>
-                <?php endif; endforeach; ?>
+<div class="ur-yeni" id="ur-yeni" hidden style="margin-bottom:18px">
+    <div class="ur-grup-bas"><h3>Yeni ürün</h3></div>
+    <form method="POST">
+        <input type="hidden" name="ekle" value="1">
+        <div class="ur-yeni-govde">
+            <div class="ur-alan" style="grid-column:1/-1">
+                <label for="name">Ürün adı</label>
+                <input type="text" name="name" id="name" class="form-control" required maxlength="255"
+                    placeholder="Başlangıç Hosting">
             </div>
-            <div style="display: flex; gap: 15px; align-items: center;">
-                <div class="search-box">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="searchInput" placeholder="Ürün ara...">
-                </div>
-                <div class="view-toggle">
-                    <button class="view-btn active" data-view="grid" title="Kart Görünümü">
-                        <i class="fas fa-th-large"></i>
-                    </button>
-                    <button class="view-btn" data-view="table" title="Tablo Görünümü">
-                        <i class="fas fa-list"></i>
-                    </button>
-                </div>
+            <div class="ur-alan">
+                <label for="group_id">Grup</label>
+                <select name="group_id" id="group_id" class="form-control" onchange="urTipGizle(this.value)">
+                    <option value="0">Grupsuz</option>
+                    <?php foreach ($gruplar as $g): ?>
+                        <option value="<?= (int) $g['id'] ?>"
+                            <?= $grupSuzgec === (int) $g['id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars((string) $g['name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="ur-alan" id="ur-tip-alani">
+                <label for="type">Tür</label>
+                <select name="type" id="type" class="form-control">
+                    <?php foreach (Katalog::URUN_TIPLERI as $deger => $ad): ?>
+                        <option value="<?= $deger ?>"><?= $ad ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="ur-alan">
+                <label for="price_monthly">Aylık fiyat</label>
+                <input type="text" name="price_monthly" id="price_monthly" class="form-control"
+                    inputmode="decimal" placeholder="199,00">
+            </div>
+            <div class="ur-alan">
+                <label for="price_annually">Yıllık fiyat</label>
+                <input type="text" name="price_annually" id="price_annually" class="form-control"
+                    inputmode="decimal" placeholder="1990,00">
+            </div>
+            <div class="ur-alan">
+                <label for="setup_fee">Kurulum ücreti</label>
+                <input type="text" name="setup_fee" id="setup_fee" class="form-control"
+                    inputmode="decimal" placeholder="0">
+            </div>
+            <div class="ur-alan" style="grid-column:1/-1">
+                <label for="description">Açıklama</label>
+                <input type="text" name="description" id="description" class="form-control" maxlength="500">
             </div>
         </div>
-    </div>
+        <div class="ur-yeni-alt">
+            <label class="ur-onay">
+                <input type="checkbox" name="is_active" value="1" checked>
+                Satışa açık olsun
+            </label>
+            <div style="display:flex;gap:8px">
+                <button type="button" class="btn btn-outline" onclick="urYeniKapat()">Vazgeç</button>
+                <button type="submit" class="btn btn-primary">Ekle ve düzenle</button>
+            </div>
+        </div>
+    </form>
 </div>
 
-<?php if (empty($products)): ?>
-    <div class="card">
-        <div class="card-body">
-            <div class="empty-state-modern">
-                <div class="icon">📦</div>
-                <h3>Henüz ürün eklenmemiş</h3>
-                <p>İlk ürününüzü ekleyerek başlayın. Önce bir ürün grubu oluşturmanız gerekebilir.</p>
-                <div style="display: flex; gap: 10px; justify-content: center;">
-                    <a href="product-groups.php" class="btn btn-outline">
-                        <i class="fas fa-folder-plus"></i> Grup Oluştur
-                    </a>
-                    <a href="product-add.php" class="btn btn-primary">
-                        <i class="fas fa-plus"></i> Ürün Ekle
-                    </a>
-                </div>
-            </div>
+<div class="ur-arac">
+    <form method="GET">
+        <input type="search" name="q" class="form-control" placeholder="Ürün adı ara…"
+            value="<?= htmlspecialchars($arama) ?>">
+        <select name="grup" class="form-control">
+            <option value="0">Tüm gruplar</option>
+            <?php foreach ($gruplar as $g): ?>
+                <option value="<?= (int) $g['id'] ?>" <?= $grupSuzgec === (int) $g['id'] ? 'selected' : '' ?>>
+                    <?= htmlspecialchars((string) $g['name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <select name="tip" class="form-control">
+            <option value="">Tüm türler</option>
+            <?php foreach (Katalog::URUN_TIPLERI as $deger => $ad): ?>
+                <option value="<?= $deger ?>" <?= $tipSuzgec === $deger ? 'selected' : '' ?>><?= $ad ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="durum" class="form-control">
+            <option value="">Hepsi</option>
+            <option value="etkin" <?= $durumSuzgec === 'etkin' ? 'selected' : '' ?>>Satışa açık</option>
+            <option value="pasif" <?= $durumSuzgec === 'pasif' ? 'selected' : '' ?>>Pasif</option>
+        </select>
+        <button type="submit" class="btn btn-outline">Süz</button>
+        <?php if ($arama !== '' || $grupSuzgec > 0 || $tipSuzgec !== '' || $durumSuzgec !== ''): ?>
+            <a href="products.php" class="btn btn-outline">Temizle</a>
+        <?php endif; ?>
+    </form>
+</div>
+
+<?php if (!$urunler): ?>
+    <div class="ur-grup">
+        <div class="ur-bos">
+            <i class="fas fa-cubes"></i>
+            <?= $toplamUrun === 0
+                ? 'Henüz ürün eklenmemiş. Yukarıdaki "Yeni ürün" düğmesiyle başlayın.'
+                : 'Bu süzgece uyan ürün yok.' ?>
         </div>
     </div>
 <?php else: ?>
-
-<!-- Grid View -->
-<div class="products-grid active" id="gridView">
-    <?php foreach ($products as $product): 
-        $type = $product['group_type'] ?? $product['type'] ?? 'other';
-        $typeIcon = match($type) {
-            'hosting' => 'fa-globe',
-            'vps' => 'fa-server',
-            'vds' => 'fa-database',
-            'dedicated' => 'fa-building',
-            'domain' => 'fa-link',
-            'ssl' => 'fa-lock',
-            default => 'fa-box'
-        };
+    <?php
+    /* Gruba göre böl; grupsuzlar en sona */
+    $bolumler = [];
+    foreach ($urunler as $u) {
+        $anahtar = $u['grup_adi'] ?? '';
+        $bolumler[$anahtar][] = $u;
+    }
     ?>
-        <div class="product-card" data-group="<?= $product['group_id'] ?>" data-name="<?= strtolower($product['name']) ?>">
-            <div class="product-card-header">
-                <div class="product-card-icon <?= $type ?>">
-                    <i class="fas <?= $typeIcon ?>"></i>
-                </div>
-                <div class="product-card-status">
-                    <?php if ($product['is_active']): ?>
-                        <span class="badge badge-sm badge-active">Aktif</span>
-                    <?php else: ?>
-                        <span class="badge badge-sm badge-inactive">Pasif</span>
-                    <?php endif; ?>
-                    <?php if ($product['is_featured'] ?? false): ?>
-                        <span class="badge badge-sm badge-featured">⭐</span>
-                    <?php endif; ?>
-                </div>
+    <?php foreach ($bolumler as $grupAdi => $liste): ?>
+        <div class="ur-grup">
+            <div class="ur-grup-bas">
+                <h3><?= htmlspecialchars($grupAdi !== '' ? (string) $grupAdi : 'Grupsuz ürünler') ?></h3>
+                <span><?= count($liste) ?> ürün</span>
             </div>
-            <div class="product-card-body">
-                <h4 class="product-card-title"><?= htmlspecialchars($product['name']) ?></h4>
-                <div class="product-card-group">
-                    <?php if ($product['group_name']): ?>
-                        <i class="fas fa-folder" style="color: var(--primary);"></i>
-                        <?= htmlspecialchars($product['group_name']) ?>
-                    <?php else: ?>
-                        <i class="fas fa-exclamation-triangle" style="color: #f59e0b;"></i>
-                        <span style="color: #f59e0b;">Grup atanmamış</span>
-                    <?php endif; ?>
-                </div>
-                <div class="product-card-prices">
-                    <div class="price-item">
-                        <div class="label">Aylık</div>
-                        <div class="value <?= !$product['price_monthly'] ? 'muted' : '' ?>">
-                            <?= $product['price_monthly'] ? number_format((float)$product['price_monthly'], 0) . '₺' : '-' ?>
+
+            <?php foreach ($liste as $u):
+                $etkin = (int) $u['is_active'] === 1;
+                $fiyatlar = Katalog::fiyatlar($u);
+                $ilkAd = array_key_first($fiyatlar);
+                ?>
+                <div class="ur-satir <?= $etkin ? '' : 'pasif' ?>">
+                    <span class="ur-ikon">
+                        <i class="fas <?= $tipIkon[$u['type']] ?? 'fa-cube' ?>"></i>
+                    </span>
+
+                    <div class="ur-orta">
+                        <b><a href="product-edit.php?id=<?= (int) $u['id'] ?>">
+                            <?= htmlspecialchars((string) $u['name']) ?></a></b>
+                        <div class="ur-alt">
+                            <span class="ur-etiket"><?= Katalog::URUN_TIPLERI[$u['type']] ?? htmlspecialchars((string) $u['type']) ?></span>
+                            <?php if (!$etkin): ?>
+                                <span class="ur-etiket">Pasif</span>
+                            <?php endif; ?>
+                            <?php if ((int) $u['kullanim'] > 0): ?>
+                                <span class="ur-etiket"><?= (int) $u['kullanim'] ?> hizmet</span>
+                            <?php endif; ?>
+                            <?php if ((float) $u['setup_fee'] > 0): ?>
+                                <span class="ur-etiket">Kurulum <?= number_format((float) $u['setup_fee'], 2, ',', '.') ?> ₺</span>
+                            <?php endif; ?>
+                            <?php if ((int) $u['stock_control'] === 1): ?>
+                                <span class="ur-etiket">Stok <?= (int) $u['stock_quantity'] ?></span>
+                            <?php endif; ?>
                         </div>
                     </div>
-                    <div class="price-item">
-                        <div class="label">Yıllık</div>
-                        <div class="value <?= !$product['price_annually'] ? 'muted' : '' ?>">
-                            <?= $product['price_annually'] ? number_format((float)$product['price_annually'], 0) . '₺' : '-' ?>
-                        </div>
+
+                    <div class="ur-fiyat">
+                        <?php if ($ilkAd === null): ?>
+                            <b style="color:var(--y-danger)">Fiyat yok</b>
+                            <span>Düzenleyip fiyat girin</span>
+                        <?php else: ?>
+                            <b><?= number_format($fiyatlar[$ilkAd], 2, ',', '.') ?> ₺</b>
+                            <span><?= $ilkAd ?><?= count($fiyatlar) > 1
+                                ? ' +' . (count($fiyatlar) - 1) . ' dönem' : '' ?></span>
+                        <?php endif; ?>
                     </div>
-                    <div class="price-item">
-                        <div class="label">Kurulum</div>
-                        <div class="value <?= !$product['setup_fee'] ? 'muted' : '' ?>">
-                            <?= $product['setup_fee'] ? number_format((float)$product['setup_fee'], 0) . '₺' : 'Ücretsiz' ?>
-                        </div>
+
+                    <div class="ur-eylem">
+                        <a href="product-edit.php?id=<?= (int) $u['id'] ?>" class="ur-dugme" title="Düzenle">
+                            <i class="fas fa-pen"></i>
+                        </a>
+
+                        <form method="POST">
+                            <input type="hidden" name="durum_degistir" value="<?= (int) $u['id'] ?>">
+                            <button type="submit" class="ur-dugme"
+                                title="<?= $etkin ? 'Pasife al' : 'Satışa aç' ?>">
+                                <i class="fas <?= $etkin ? 'fa-eye' : 'fa-eye-slash' ?>"></i>
+                            </button>
+                        </form>
+
+                        <form method="POST"
+                            onsubmit="return confirm('<?= htmlspecialchars(addslashes((string) $u['name'])) ?> silinecek. Emin misiniz?')">
+                            <input type="hidden" name="sil" value="<?= (int) $u['id'] ?>">
+                            <button type="submit" class="ur-dugme tehlike" title="Sil">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
                     </div>
                 </div>
-                <div class="product-card-actions">
-                    <a href="product-edit.php?id=<?= $product['id'] ?>" class="btn btn-outline btn-sm">
-                        <i class="fas fa-edit"></i> Düzenle
-                    </a>
-                    <button onclick="confirmDelete('Bu ürünü silmek istediğinizden emin misiniz?', '?delete=<?= $product['id'] ?>')" class="btn btn-danger btn-sm">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            </div>
+            <?php endforeach; ?>
         </div>
     <?php endforeach; ?>
-</div>
-
-<!-- Table View -->
-<div class="products-table card" id="tableView">
-    <div class="card-body" style="padding: 0;">
-        <table class="table-enhanced">
-            <thead>
-                <tr>
-                    <th>Ürün</th>
-                    <th>Grup</th>
-                    <th>Aylık</th>
-                    <th>Yıllık</th>
-                    <th>Kurulum</th>
-                    <th>Durum</th>
-                    <th style="text-align: right;">İşlemler</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($products as $product): 
-                    $type = $product['group_type'] ?? $product['type'] ?? 'other';
-                    $typeIcon = match($type) {
-                        'hosting' => 'fa-globe',
-                        'vps' => 'fa-server',
-                        'vds' => 'fa-database',
-                        'dedicated' => 'fa-building',
-                        'domain' => 'fa-link',
-                        'ssl' => 'fa-lock',
-                        default => 'fa-box'
-                    };
-                ?>
-                    <tr data-group="<?= $product['group_id'] ?>" data-name="<?= strtolower($product['name']) ?>">
-                        <td>
-                            <div class="product-info">
-                                <div class="product-info-icon <?= $type ?>">
-                                    <i class="fas <?= $typeIcon ?>"></i>
-                                </div>
-                                <div class="product-info-text">
-                                    <h4><?= htmlspecialchars($product['name']) ?></h4>
-                                    <span>#<?= $product['id'] ?> • <?= htmlspecialchars($product['slug']) ?></span>
-                                </div>
-                            </div>
-                        </td>
-                        <td>
-                            <?php if ($product['group_name']): ?>
-                                <?= htmlspecialchars($product['group_name']) ?>
-                            <?php else: ?>
-                                <span style="color: #f59e0b;">⚠️ Yok</span>
-                            <?php endif; ?>
-                        </td>
-                        <td class="price-cell <?= !$product['price_monthly'] ? 'muted' : '' ?>">
-                            <?= $product['price_monthly'] ? number_format((float)$product['price_monthly'], 2) . ' ₺' : '-' ?>
-                        </td>
-                        <td class="price-cell <?= !$product['price_annually'] ? 'muted' : '' ?>">
-                            <?= $product['price_annually'] ? number_format((float)$product['price_annually'], 2) . ' ₺' : '-' ?>
-                        </td>
-                        <td class="price-cell <?= !$product['setup_fee'] ? 'muted' : '' ?>">
-                            <?= $product['setup_fee'] ? number_format((float)$product['setup_fee'], 2) . ' ₺' : 'Ücretsiz' ?>
-                        </td>
-                        <td>
-                            <?php if ($product['is_active']): ?>
-                                <span class="badge badge-sm badge-active">Aktif</span>
-                            <?php else: ?>
-                                <span class="badge badge-sm badge-inactive">Pasif</span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <div class="action-buttons" style="justify-content: flex-end;">
-                                <a href="product-edit.php?id=<?= $product['id'] ?>" class="btn btn-sm btn-outline">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                                <button onclick="confirmDelete('Bu ürünü silmek istediğinizden emin misiniz?', '?delete=<?= $product['id'] ?>')" class="btn btn-sm btn-danger">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
-
 <?php endif; ?>
 
 <script>
-// View Toggle
-document.querySelectorAll('.view-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-        document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-        
-        const view = this.dataset.view;
-        if (view === 'grid') {
-            document.getElementById('gridView').classList.add('active');
-            document.getElementById('tableView').classList.remove('active');
-        } else {
-            document.getElementById('gridView').classList.remove('active');
-            document.getElementById('tableView').classList.add('active');
-        }
-    });
-});
+    function urYeniAc() {
+        var k = document.getElementById('ur-yeni');
+        k.hidden = false;
+        document.getElementById('name').focus();
+    }
 
-// Filter Tabs
-document.querySelectorAll('.filter-tab').forEach(tab => {
-    tab.addEventListener('click', function() {
-        document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-        this.classList.add('active');
-        
-        const filter = this.dataset.filter;
-        const cards = document.querySelectorAll('.product-card, .products-table tbody tr');
-        
-        cards.forEach(card => {
-            if (filter === 'all') {
-                card.style.display = '';
-            } else {
-                const groupId = card.dataset.group;
-                const filterGroupId = filter.replace('group-', '');
-                card.style.display = groupId === filterGroupId ? '' : 'none';
-            }
-        });
-    });
-});
+    function urYeniKapat() {
+        document.getElementById('ur-yeni').hidden = true;
+    }
 
-// Search
-document.getElementById('searchInput').addEventListener('input', function() {
-    const search = this.value.toLowerCase();
-    const items = document.querySelectorAll('.product-card, .products-table tbody tr');
-    
-    items.forEach(item => {
-        const name = item.dataset.name || '';
-        item.style.display = name.includes(search) ? '' : 'none';
-    });
-});
+    /* Grup seçilince tür gruptan gelir, elle seçim anlamsız olur */
+    function urTipGizle(deger) {
+        document.getElementById('ur-tip-alani').hidden = deger !== '0';
+    }
 
-// Modal outside click
-document.querySelectorAll('.modal').forEach(modal => {
-    modal.addEventListener('click', function(e) {
-        if (e.target === this) {
-            this.classList.remove('show');
-        }
-    });
-});
+    urTipGizle(document.getElementById('group_id').value);
 </script>
 
-<?php include 'includes/footer.php'; ?>
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
