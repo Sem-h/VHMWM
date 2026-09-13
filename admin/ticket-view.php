@@ -1,6 +1,14 @@
 <?php
 /**
- * WHMVM - Admin Ticket Görüntüleme
+ * VHM - Destek talebi detayı
+ *
+ * Önceki sürümde durum beyaz listesi 'on-hold' yazıyordu; tablodaki enum
+ * değeri 'on_hold'. "Beklemede" seçildiğinde koşul tutmuyor, sayfa hiçbir
+ * şey yapmadan geri dönüyordu. 'customer_reply' ve 'in_progress' ise
+ * listede hiç yoktu.
+ *
+ * Yanıt gövdesi ham HTML olarak basılıyordu; artık düz metin olarak
+ * kaçırılıp satır sonları korunuyor. İç not (is_internal) desteği eklendi.
  */
 
 declare(strict_types=1);
@@ -8,8 +16,6 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Settings.php';
-require_once dirname(__DIR__) . '/includes/Mail.php';
-
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
@@ -18,777 +24,667 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
-$pageTitle = 'Destek Talebi';
-$currentPage = 'tickets';
-$db = Database::getInstance();
-$adminId = $_SESSION['admin_id'];
-$adminName = $_SESSION['admin_name'] ?? 'Admin';
+$adminId = (int) $_SESSION['admin_id'];
+$adminAdi = (string) ($_SESSION['admin_name'] ?? $_SESSION['admin_username'] ?? 'Yönetici');
+$id = (int) ($_GET['id'] ?? 0);
 
-$ticketId = (int)($_GET['id'] ?? 0);
-$message = '';
-$error = '';
+/* tickets.status enum'u ile birebir aynı */
+const DS_DURUMLAR = [
+    'open' => ['Açık', 'badge-info'],
+    'answered' => ['Yanıtlandı', 'badge-success'],
+    'customer_reply' => ['Müşteri yanıtladı', 'badge-warning'],
+    'on_hold' => ['Beklemede', 'badge-warning'],
+    'in_progress' => ['İşlemde', 'badge-info'],
+    'closed' => ['Kapalı', 'badge'],
+];
 
-// Ticket'ı çek
-$stmt = $db->prepare("
-    SELECT t.*, 
-           c.first_name, c.last_name, c.email as client_email,
-           d.name as department_name 
-    FROM tickets t 
-    LEFT JOIN clients c ON t.client_id = c.id 
-    LEFT JOIN departments d ON t.department_id = d.id 
-    WHERE t.id = ?
-");
-$stmt->execute([$ticketId]);
-$ticket = $stmt->fetch();
+const DS_ONCELIKLER = [
+    'low' => ['Düşük', '#64748b'],
+    'medium' => ['Orta', '#2474f5'],
+    'high' => ['Yüksek', '#f59e0b'],
+    'urgent' => ['Acil', '#ef4444'],
+];
 
-if (!$ticket) {
+$talep = $id > 0 ? Database::fetch(
+    "SELECT t.*, c.first_name, c.last_name, c.email AS musteri_eposta, c.phone,
+            d.name AS departman
+       FROM tickets t
+       LEFT JOIN clients c ON c.id = t.client_id
+       LEFT JOIN departments d ON d.id = t.department_id
+      WHERE t.id = ?",
+    [$id]
+) : null;
+
+if (!$talep) {
+    $_SESSION['ds_mesaj'] = ['tip' => 'error', 'metin' => 'Destek talebi bulunamadı.'];
     header('Location: tickets.php');
     exit;
 }
 
-// Yanıt gönder
+$musteriEposta = (string) ($talep['musteri_eposta'] ?: $talep['email']);
+$adSoyad = trim((string) $talep['first_name'] . ' ' . (string) $talep['last_name']);
+if ($adSoyad === '') {
+    $adSoyad = (string) ($talep['name'] ?: 'Misafir');
+}
+
+function talepDon(string $tip, string $metin, int $id): never
+{
+    $_SESSION['dv_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: ticket-view.php?id=' . $id);
+    exit;
+}
+
+/** Müşteriye bildirim; gönderilemezse işlem yine de tamamlanır */
+function talepBildir(string $sablon, array $talep, string $eposta, array $degisken): void
+{
+    if ($eposta === '') {
+        return;
+    }
+
+    try {
+        require_once dirname(__DIR__) . '/includes/Mail.php';
+        Mail::sendTemplate($sablon, $eposta, $degisken, (string) $talep['first_name']);
+    } catch (Throwable $e) {
+        error_log('Destek bildirimi gönderilemedi: ' . $e->getMessage());
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['message'])) {
-        $replyMessage = trim($_POST['message']);
-        
-        if (!empty($replyMessage)) {
-            $stmt = $db->prepare("INSERT INTO ticket_replies (ticket_id, admin_id, message) VALUES (?, ?, ?)");
-            $stmt->execute([$ticketId, $adminId, $replyMessage]);
-            
-            // Ticket durumunu güncelle
-            $stmt = $db->prepare("UPDATE tickets SET status = 'answered', last_reply_by = 'admin', last_reply_at = NOW(), updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$ticketId]);
-            
-            // Müşteriye yanıt bildirimi gönder
-            try {
-                Mail::sendTemplate('ticket_reply', $ticket['client_email'], [
-                    'client_name' => $ticket['first_name'] . ' ' . $ticket['last_name'],
-                    'ticket_id' => $ticket['ticket_number'],
-                    'ticket_subject' => $ticket['subject'],
-                    'reply_staff' => $adminName,
-                    'reply_message' => mb_substr(strip_tags($replyMessage), 0, 200) . '...'
-                ], $ticket['first_name']);
-            } catch (Throwable $e) {
-                // Mail hatası yanıtı engellemesin
+    Guvenlik::zorunlu();
+
+    /* ---------- Yanıt / iç not ---------- */
+    if (isset($_POST['yanit'])) {
+        $metin = trim((string) $_POST['mesaj']);
+        $icNot = isset($_POST['ic_not']);
+
+        if ($metin === '') {
+            talepDon('error', 'Boş yanıt gönderilemez.', $id);
+        }
+        if (mb_strlen($metin) > 20000) {
+            talepDon('error', 'Yanıt çok uzun (en fazla 20.000 karakter).', $id);
+        }
+
+        try {
+            Database::insert('ticket_replies', [
+                'ticket_id' => $id,
+                'admin_id' => $adminId,
+                'message' => $metin,
+                'is_internal' => $icNot ? 1 : 0,
+            ]);
+
+            /* İç not müşteriye görünmez; talebin durumunu da değiştirmez */
+            if (!$icNot) {
+                Database::query(
+                    "UPDATE tickets
+                        SET status = 'answered', last_reply_by = 'admin', last_reply_at = NOW()
+                      WHERE id = ?",
+                    [$id]
+                );
             }
-            
-            header("Location: ticket-view.php?id=$ticketId&sent=1");
-            exit;
+        } catch (Throwable $e) {
+            error_log('Destek yanıtı kaydedilemedi: ' . $e->getMessage());
+            talepDon('error', 'Yanıt kaydedilemedi.', $id);
         }
-    }
-    
-    // Durum değiştir
-    if (isset($_POST['change_status'])) {
-        $newStatus = $_POST['new_status'] ?? '';
-        if (in_array($newStatus, ['open', 'answered', 'closed', 'on-hold'])) {
-            $stmt = $db->prepare("UPDATE tickets SET status = ?, updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$newStatus, $ticketId]);
-            
-            // Ticket kapatıldığında bildirim gönder
-            if ($newStatus === 'closed') {
-                try {
-                    Mail::sendTemplate('ticket_closed', $ticket['client_email'], [
-                        'client_name' => $ticket['first_name'] . ' ' . $ticket['last_name'],
-                        'ticket_id' => $ticket['ticket_number'],
-                        'ticket_subject' => $ticket['subject']
-                    ], $ticket['first_name']);
-                } catch (Throwable $e) {
-                    // Mail hatası işlemi engellemesin
-                }
-            }
-            
-            header("Location: ticket-view.php?id=$ticketId&status_changed=1");
-            exit;
+
+        if (!$icNot) {
+            talepBildir('ticket_reply', $talep, $musteriEposta, [
+                'client_name' => $adSoyad,
+                'ticket_id' => (string) $talep['ticket_number'],
+                'ticket_subject' => (string) $talep['subject'],
+                'reply_staff' => $adminAdi,
+                'reply_message' => mb_substr($metin, 0, 200) . (mb_strlen($metin) > 200 ? '…' : ''),
+            ]);
         }
+
+        talepDon('success', $icNot ? 'İç not eklendi.' : 'Yanıtınız gönderildi.', $id);
     }
-    
-    // Öncelik değiştir
-    if (isset($_POST['change_priority'])) {
-        $newPriority = $_POST['new_priority'] ?? '';
-        if (in_array($newPriority, ['low', 'medium', 'high', 'urgent'])) {
-            $stmt = $db->prepare("UPDATE tickets SET priority = ?, updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$newPriority, $ticketId]);
-            
-            header("Location: ticket-view.php?id=$ticketId&priority_changed=1");
-            exit;
+
+    /* ---------- Durum ---------- */
+    if (isset($_POST['durum'])) {
+        $yeni = (string) $_POST['durum'];
+
+        if (!isset(DS_DURUMLAR[$yeni])) {
+            talepDon('error', 'Geçersiz durum.', $id);
         }
+        if ($yeni === $talep['status']) {
+            talepDon('uyari', 'Talep zaten bu durumda.', $id);
+        }
+
+        Database::query("UPDATE tickets SET status = ? WHERE id = ?", [$yeni, $id]);
+
+        if ($yeni === 'closed') {
+            talepBildir('ticket_closed', $talep, $musteriEposta, [
+                'client_name' => $adSoyad,
+                'ticket_id' => (string) $talep['ticket_number'],
+                'ticket_subject' => (string) $talep['subject'],
+            ]);
+        }
+
+        talepDon('success', 'Durum "' . DS_DURUMLAR[$yeni][0] . '" olarak güncellendi.', $id);
     }
+
+    /* ---------- Öncelik ---------- */
+    if (isset($_POST['oncelik'])) {
+        $yeni = (string) $_POST['oncelik'];
+
+        if (!isset(DS_ONCELIKLER[$yeni])) {
+            talepDon('error', 'Geçersiz öncelik.', $id);
+        }
+
+        Database::query("UPDATE tickets SET priority = ? WHERE id = ?", [$yeni, $id]);
+        talepDon('success', 'Öncelik "' . DS_ONCELIKLER[$yeni][0] . '" olarak güncellendi.', $id);
+    }
+
+    talepDon('error', 'Tanımsız işlem.', $id);
 }
 
-// Yanıtları çek
-$replies = $db->query("
-    SELECT r.*, 
-           c.first_name as client_first_name, c.last_name as client_last_name,
-           a.first_name as admin_first_name, a.last_name as admin_last_name
-    FROM ticket_replies r 
-    LEFT JOIN clients c ON r.client_id = c.id 
-    LEFT JOIN admins a ON r.admin_id = a.id 
-    WHERE r.ticket_id = $ticketId 
-    ORDER BY r.created_at ASC
-")->fetchAll();
-
-// Mesajlar
-if (isset($_GET['sent'])) {
-    $message = 'Yanıtınız başarıyla gönderildi.';
-}
-if (isset($_GET['status_changed'])) {
-    $message = 'Ticket durumu güncellendi.';
-}
-if (isset($_GET['priority_changed'])) {
-    $message = 'Ticket önceliği güncellendi.';
+$mesaj = null;
+if (!empty($_SESSION['dv_mesaj'])) {
+    $mesaj = $_SESSION['dv_mesaj'];
+    unset($_SESSION['dv_mesaj']);
 }
 
-// Durum ve öncelik bilgileri
-$statusInfo = match($ticket['status']) {
-    'open' => ['class' => 'success', 'text' => 'Açık', 'icon' => '🟢'],
-    'answered' => ['class' => 'info', 'text' => 'Yanıtlandı', 'icon' => '🔵'],
-    'customer_reply' => ['class' => 'warning', 'text' => 'Müşteri Yanıtı', 'icon' => '🟡'],
-    'on-hold' => ['class' => 'secondary', 'text' => 'Beklemede', 'icon' => '⏸️'],
-    'closed' => ['class' => 'gray', 'text' => 'Kapalı', 'icon' => '⚫'],
-    default => ['class' => 'gray', 'text' => $ticket['status'], 'icon' => '⚪']
-};
+$yanitlar = Database::fetchAll(
+    "SELECT r.*,
+            c.first_name AS m_ad, c.last_name AS m_soyad,
+            a.first_name AS y_ad, a.last_name AS y_soyad, a.username AS y_kullanici
+       FROM ticket_replies r
+       LEFT JOIN clients c ON c.id = r.client_id
+       LEFT JOIN admins a ON a.id = r.admin_id
+      WHERE r.ticket_id = ?
+      ORDER BY r.created_at, r.id",
+    [$id]
+);
 
-$priorityInfo = match($ticket['priority']) {
-    'urgent' => ['class' => 'danger', 'text' => 'Acil', 'icon' => '🔴'],
-    'high' => ['class' => 'warning', 'text' => 'Yüksek', 'icon' => '🟠'],
-    'medium' => ['class' => 'info', 'text' => 'Normal', 'icon' => '🟡'],
-    default => ['class' => 'success', 'text' => 'Düşük', 'icon' => '🟢']
-};
+$hizmet = null;
+if (!empty($talep['service_id'])) {
+    $hizmet = Database::fetch(
+        "SELECT s.id, s.domain, s.status, p.name AS urun
+           FROM services s
+           LEFT JOIN products p ON p.id = s.product_id
+          WHERE s.id = ?",
+        [(int) $talep['service_id']]
+    );
+}
 
-include 'includes/header.php';
+[$durumAd, $durumSinif] = DS_DURUMLAR[$talep['status']] ?? [(string) $talep['status'], 'badge'];
+[$oncelikAd, $oncelikRenk] = DS_ONCELIKLER[$talep['priority']] ?? [(string) $talep['priority'], '#64748b'];
+
+$pageTitle = 'Talep ' . ($talep['ticket_number'] ?: '#' . $id);
+$currentPage = 'tickets';
+require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* Ticket View Styles */
-.ticket-layout {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: 25px;
-}
-
-.ticket-main {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-.ticket-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-.ticket-card {
-    background: var(--y-yuzey);
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    overflow: hidden;
-}
-
-.ticket-card-header {
-    padding: 18px 22px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.ticket-card-header h3 {
-    font-size: 15px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.ticket-card-body {
-    padding: 22px;
-}
-
-/* Header Card */
-.ticket-header-card {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: white;
-    border-radius: 12px;
-    padding: 25px;
-}
-
-.ticket-header-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 15px;
-}
-
-.ticket-back {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: rgba(255,255,255,0.7);
-    text-decoration: none;
-    font-size: 13px;
-    margin-bottom: 10px;
-    transition: color 0.2s;
-}
-
-.ticket-back:hover {
-    color: white;
-}
-
-.ticket-number {
-    background: rgba(255,255,255,0.2);
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.ticket-title {
-    font-size: 22px;
-    font-weight: 700;
-    margin: 0;
-}
-
-.ticket-badges {
-    display: flex;
-    gap: 10px;
-}
-
-.ticket-badge {
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    background: rgba(255,255,255,0.2);
-}
-
-/* Client Info */
-.client-info {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    padding: 15px;
-    background: var(--y-yuzey-2);
-    border-radius: 10px;
-}
-
-.client-avatar {
-    width: 50px;
-    height: 50px;
-    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: 700;
-    font-size: 18px;
-}
-
-.client-details h4 {
-    font-size: 15px;
-    font-weight: 600;
-    margin-bottom: 3px;
-}
-
-.client-details p {
-    font-size: 13px;
-    color: var(--gray);
-    margin: 0;
-}
-
-.client-details a {
-    color: var(--primary);
-    text-decoration: none;
-}
-
-/* Info Items */
-.info-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--y-cizgi-soft);
-}
-
-.info-item:last-child {
-    border-bottom: none;
-}
-
-.info-label {
-    font-size: 13px;
-    color: var(--gray);
-}
-
-.info-value {
-    font-size: 14px;
-    font-weight: 600;
-}
-
-/* Status/Priority Select */
-.quick-select {
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 13px;
-    cursor: pointer;
-    background: var(--y-yuzey);
-}
-
-.quick-select:focus {
-    outline: none;
-    border-color: var(--primary);
-}
-
-/* Messages */
-.messages-container {
-    max-height: 500px;
-    overflow-y: auto;
-}
-
-.message-item {
-    padding: 20px;
-    border-bottom: 1px solid var(--y-cizgi-soft);
-}
-
-.message-item:last-child {
-    border-bottom: none;
-}
-
-.message-item.admin-message {
-    background: #f0f9ff;
-    border-left: 3px solid var(--primary);
-}
-
-.message-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 12px;
-}
-
-.message-author {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.author-avatar {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    color: white;
-}
-
-.author-avatar.client {
-    background: linear-gradient(135deg, #64748b 0%, #475569 100%);
-}
-
-.author-avatar.admin {
-    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
-}
-
-.author-info h4 {
-    font-size: 14px;
-    font-weight: 600;
-    margin: 0 0 2px 0;
-}
-
-.author-info span {
-    font-size: 12px;
-    color: var(--gray);
-}
-
-.staff-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: var(--primary);
-    color: white;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: 600;
-    margin-left: 8px;
-}
-
-.message-time {
-    font-size: 12px;
-    color: var(--gray);
-}
-
-.message-content {
-    line-height: 1.7;
-    white-space: pre-wrap;
-    font-size: 14px;
-    color: var(--y-metin-2);
-    padding-left: 54px;
-}
-
-/* Reply Form */
-.reply-textarea {
-    width: 100%;
-    min-height: 120px;
-    padding: 15px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-size: 14px;
-    font-family: inherit;
-    resize: vertical;
-    margin-bottom: 15px;
-}
-
-.reply-textarea:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-}
-
-.reply-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.canned-responses {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.canned-btn {
-    padding: 6px 12px;
-    background: var(--y-yuzey-2);
-    border: none;
-    border-radius: 6px;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.canned-btn:hover {
-    background: var(--y-cizgi);
-}
-
-/* Alert */
-.alert {
-    padding: 15px 20px;
-    border-radius: 10px;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.alert-success {
-    background: #d1fae5;
-    color: #065f46;
-}
-
-/* Badge */
-.badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.badge-success { background: #d1fae5; color: #065f46; }
-.badge-warning { background: #fef3c7; color: #92400e; }
-.badge-danger { background: #fee2e2; color: #991b1b; }
-.badge-info { background: #dbeafe; color: #1e40af; }
-.badge-gray { background: var(--y-yuzey-2); color: var(--y-metin-2); }
-.badge-secondary { background: var(--y-cizgi); color: var(--y-metin-3); }
-
-/* Buttons */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 10px 18px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    text-decoration: none;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-primary {
-    background: var(--primary);
-    color: white;
-}
-
-.btn-primary:hover {
-    background: var(--primary-dark);
-}
-
-.btn-outline {
-    background: var(--y-yuzey);
-    color: var(--dark);
-    border: 1px solid var(--border);
-}
-
-.btn-outline:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.btn-danger {
-    background: var(--danger);
-    color: white;
-}
-
-.btn-danger:hover {
-    background: #dc2626;
-}
-
-/* Closed Notice */
-.closed-notice {
-    background: #fef3c7;
-    border: 1px solid #fcd34d;
-    border-radius: 10px;
-    padding: 15px 20px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: #92400e;
-}
-
-/* Responsive */
-@media (max-width: 1200px) {
-    .ticket-layout {
-        grid-template-columns: 1fr;
+    /* ==========================================
+       Destek talebi detayı - dv
+       ========================================== */
+    .dv-duzen {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 290px;
+        gap: 18px;
+        align-items: start;
     }
-    
-    .ticket-sidebar {
-        order: -1;
+
+    .dv-konu {
+        padding: 16px 18px;
+        margin-bottom: 18px;
+        border: 1px solid var(--y-cizgi);
+        border-left: 3px solid <?= $oncelikRenk ?>;
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
     }
-}
+
+    .dv-konu h2 {
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.45;
+        color: var(--y-metin);
+    }
+
+    .dv-konu-alt {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: 9px;
+        font-size: 12px;
+        color: var(--y-metin-3);
+    }
+
+    .dv-nokta {
+        color: var(--y-cizgi);
+    }
+
+    .dv-mesaj {
+        display: flex;
+        gap: 12px;
+        padding: 16px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+    }
+
+    .dv-mesaj + .dv-mesaj {
+        margin-top: 12px;
+    }
+
+    .dv-mesaj.personel {
+        background: var(--y-primary-soft);
+        border-color: color-mix(in srgb, var(--y-primary) 26%, transparent);
+    }
+
+    .dv-mesaj.icnot {
+        background: color-mix(in srgb, var(--y-warning) 12%, var(--y-yuzey));
+        border-color: color-mix(in srgb, var(--y-warning) 34%, transparent);
+        border-style: dashed;
+    }
+
+    .dv-avatar {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 50%;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-2);
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .dv-mesaj.personel .dv-avatar {
+        background: var(--y-primary);
+        color: #fff;
+    }
+
+    .dv-govde {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .dv-govde-bas {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+
+    .dv-govde-bas b {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .dv-govde-bas time {
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .dv-rozet {
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--y-warning);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+
+    .dv-metin {
+        font-size: 13.5px;
+        line-height: 1.7;
+        color: var(--y-metin-2);
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .dv-ek {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 10px;
+        padding: 5px 10px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 7px;
+        font-size: 12px;
+        color: var(--y-metin-2);
+    }
+
+    .dv-yanit {
+        margin-top: 18px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
+
+    .dv-yanit-bas {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+        font-size: 12.5px;
+        font-weight: 700;
+    }
+
+    .dv-yanit-govde {
+        padding: 16px;
+    }
+
+    .dv-yanit textarea {
+        width: 100%;
+        min-height: 140px;
+        padding: 12px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 9px;
+        background: var(--y-zemin);
+        color: var(--y-metin);
+        font: inherit;
+        font-size: 13.5px;
+        line-height: 1.65;
+        resize: vertical;
+    }
+
+    .dv-yanit textarea:focus {
+        outline: none;
+        border-color: var(--y-primary);
+        box-shadow: 0 0 0 3px var(--y-primary-soft);
+    }
+
+    .dv-yanit-alt {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 12px;
+    }
+
+    .dv-onay {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12.5px;
+        color: var(--y-metin-2);
+        cursor: pointer;
+    }
+
+    .dv-panel {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
+
+    .dv-panel + .dv-panel {
+        margin-top: 18px;
+    }
+
+    .dv-panel-bas {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+        font-size: 12.5px;
+        font-weight: 700;
+    }
+
+    .dv-panel-govde {
+        padding: 16px;
+    }
+
+    .dv-panel-govde form + form {
+        margin-top: 10px;
+    }
+
+    .dv-panel-govde label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .dv-panel-govde .btn {
+        width: 100%;
+        justify-content: center;
+        margin-top: 7px;
+    }
+
+    .dv-bilgi-satir {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+        font-size: 13px;
+    }
+
+    .dv-bilgi-satir:last-child {
+        border-bottom: none;
+    }
+
+    .dv-bilgi-satir span:first-child {
+        color: var(--y-metin-3);
+        white-space: nowrap;
+    }
+
+    .dv-bilgi-satir span:last-child {
+        text-align: right;
+        color: var(--y-metin);
+        word-break: break-word;
+    }
+
+    @media (max-width: 980px) {
+        .dv-duzen {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
 </style>
 
-<?php if ($message): ?>
-    <div class="alert alert-success">
-        ✅ <?= htmlspecialchars($message) ?>
+<div class="page-header">
+    <div>
+        <h1><?= htmlspecialchars((string) ($talep['ticket_number'] ?: '#' . $id)) ?></h1>
+        <p><a href="tickets.php">Destek talepleri</a> &rsaquo; <?= htmlspecialchars($adSoyad) ?></p>
+    </div>
+    <span class="badge <?= $durumSinif ?>" style="font-size:12.5px;padding:7px 14px"><?= $durumAd ?></span>
+</div>
+
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= htmlspecialchars($mesaj['tip']) ?>">
+        <?= htmlspecialchars($mesaj['metin']) ?>
     </div>
 <?php endif; ?>
 
-<div class="ticket-layout">
-    <!-- Main Content -->
-    <div class="ticket-main">
-        <!-- Header -->
-        <div class="ticket-header-card">
-            <a href="tickets.php" class="ticket-back">← Destek Taleplerine Dön</a>
-            <div class="ticket-header-top">
-                <div>
-                    <span class="ticket-number">#<?= htmlspecialchars($ticket['ticket_number']) ?></span>
-                    <h1 class="ticket-title"><?= htmlspecialchars($ticket['subject']) ?></h1>
-                </div>
-                <div class="ticket-badges">
-                    <span class="ticket-badge"><?= $statusInfo['icon'] ?> <?= $statusInfo['text'] ?></span>
-                    <span class="ticket-badge"><?= $priorityInfo['icon'] ?> <?= $priorityInfo['text'] ?></span>
-                </div>
+<div class="dv-duzen">
+    <div>
+        <div class="dv-konu">
+            <h2><?= htmlspecialchars((string) $talep['subject']) ?></h2>
+            <div class="dv-konu-alt">
+                <span style="color:<?= $oncelikRenk ?>;font-weight:600"><?= $oncelikAd ?> öncelik</span>
+                <span class="dv-nokta">&bull;</span>
+                <span><?= htmlspecialchars((string) ($talep['departman'] ?: 'Departman yok')) ?></span>
+                <span class="dv-nokta">&bull;</span>
+                <span><?= date('d.m.Y H:i', strtotime((string) $talep['created_at'])) ?> açıldı</span>
+                <span class="dv-nokta">&bull;</span>
+                <span><?= count($yanitlar) ?> yanıt</span>
             </div>
         </div>
-        
-        <!-- Messages -->
-        <div class="ticket-card">
-            <div class="ticket-card-header">
-                <h3>💬 Mesajlar (<?= count($replies) ?>)</h3>
+
+        <?php
+        /* İlk mesaj tickets tablosunda değil; talebi açan müşteri yanıtı
+           ticket_replies'ın ilk satırıdır. Yine de boş liste olabilir. */
+        if (!$yanitlar):
+            ?>
+            <div class="dv-mesaj">
+                <div class="dv-govde">
+                    <div class="dv-metin" style="color:var(--y-metin-3)">Bu talepte henüz mesaj yok.</div>
+                </div>
             </div>
-            <div class="messages-container">
-                <?php if (empty($replies)): ?>
-                    <div style="padding: 40px; text-align: center; color: var(--gray);">
-                        <div style="font-size: 40px; margin-bottom: 10px;">📭</div>
-                        <p>Henüz mesaj bulunmuyor.</p>
+        <?php endif; ?>
+
+        <?php foreach ($yanitlar as $y):
+            $personelMi = !empty($y['admin_id']);
+            $icNot = (int) ($y['is_internal'] ?? 0) === 1;
+            $yazan = $personelMi
+                ? trim((string) $y['y_ad'] . ' ' . (string) $y['y_soyad'])
+                : trim((string) $y['m_ad'] . ' ' . (string) $y['m_soyad']);
+            if ($yazan === '') {
+                $yazan = $personelMi ? (string) ($y['y_kullanici'] ?: 'Yönetici') : $adSoyad;
+            }
+            ?>
+            <div class="dv-mesaj <?= $icNot ? 'icnot' : ($personelMi ? 'personel' : '') ?>">
+                <span class="dv-avatar">
+                    <?= htmlspecialchars(mb_strtoupper(mb_substr($yazan, 0, 1), 'UTF-8')) ?>
+                </span>
+                <div class="dv-govde">
+                    <div class="dv-govde-bas">
+                        <b><?= htmlspecialchars($yazan) ?></b>
+                        <?php if ($icNot): ?>
+                            <span class="dv-rozet">İç not</span>
+                        <?php elseif ($personelMi): ?>
+                            <span style="font-size:11px;color:var(--y-metin-3)">Destek ekibi</span>
+                        <?php endif; ?>
+                        <time><?= date('d.m.Y H:i', strtotime((string) $y['created_at'])) ?></time>
                     </div>
-                <?php else: ?>
-                    <?php foreach ($replies as $reply): ?>
-                        <?php $isAdmin = !empty($reply['admin_id']); ?>
-                        <div class="message-item <?= $isAdmin ? 'admin-message' : '' ?>">
-                            <div class="message-header">
-                                <div class="message-author">
-                                    <div class="author-avatar <?= $isAdmin ? 'admin' : 'client' ?>">
-                                        <?php if ($isAdmin): ?>
-                                            👤
-                                        <?php else: ?>
-                                            <?= strtoupper(substr($reply['client_first_name'] ?? 'M', 0, 1)) ?>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="author-info">
-                                        <h4>
-                                            <?php if ($isAdmin): ?>
-                                                <?= htmlspecialchars(trim(($reply['admin_first_name'] ?? '') . ' ' . ($reply['admin_last_name'] ?? '')) ?: 'Admin') ?>
-                                                <span class="staff-badge">👨‍💼 Personel</span>
-                                            <?php else: ?>
-                                                <?= htmlspecialchars(trim(($reply['client_first_name'] ?? '') . ' ' . ($reply['client_last_name'] ?? '')) ?: 'Müşteri') ?>
-                                            <?php endif; ?>
-                                        </h4>
-                                        <span><?= $isAdmin ? 'Destek Ekibi' : 'Müşteri' ?></span>
-                                    </div>
-                                </div>
-                                <span class="message-time"><?= date('d.m.Y H:i', strtotime($reply['created_at'])) ?></span>
-                            </div>
-                            <div class="message-content"><?= nl2br(htmlspecialchars($reply['message'])) ?></div>
+                    <div class="dv-metin"><?= htmlspecialchars((string) $y['message']) ?></div>
+                    <?php if (!empty($y['attachment'])): ?>
+                        <span class="dv-ek">
+                            <i class="fas fa-paperclip"></i>
+                            <?= htmlspecialchars(basename((string) $y['attachment'])) ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php endforeach; ?>
+
+        <?php if ($talep['status'] !== 'closed'): ?>
+            <div class="dv-yanit">
+                <div class="dv-yanit-bas">Yanıt yaz</div>
+                <div class="dv-yanit-govde">
+                    <form method="POST">
+                        <input type="hidden" name="yanit" value="1">
+                        <textarea name="mesaj" required maxlength="20000"
+                            placeholder="Müşteriye yanıtınızı yazın…"></textarea>
+                        <div class="dv-yanit-alt">
+                            <label class="dv-onay">
+                                <input type="checkbox" name="ic_not" value="1">
+                                İç not olarak kaydet (müşteri görmez)
+                            </label>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> Gönder
+                            </button>
                         </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
+                    </form>
+                </div>
             </div>
-        </div>
-        
-        <!-- Reply Form -->
-        <?php if ($ticket['status'] !== 'closed'): ?>
-        <div class="ticket-card">
-            <div class="ticket-card-header">
-                <h3>✏️ Yanıt Yaz</h3>
+        <?php else: ?>
+            <div class="dv-yanit">
+                <div class="dv-yanit-govde" style="text-align:center;font-size:13px;color:var(--y-metin-3)">
+                    Bu talep kapatıldı. Yanıt yazmak için sağdan yeniden açın.
+                </div>
             </div>
-            <div class="ticket-card-body">
+        <?php endif; ?>
+    </div>
+
+    <div>
+        <div class="dv-panel">
+            <div class="dv-panel-bas">Talep yönetimi</div>
+            <div class="dv-panel-govde">
                 <form method="POST">
-                    <textarea name="message" class="reply-textarea" required placeholder="Yanıtınızı buraya yazın..."></textarea>
-                    <div class="reply-actions">
-                        <div class="canned-responses">
-                            <button type="button" class="canned-btn" onclick="insertCanned('Merhaba,\n\nTalebiniz alınmıştır. En kısa sürede size dönüş yapacağız.\n\nSaygılarımızla')">🔔 Alındı</button>
-                            <button type="button" class="canned-btn" onclick="insertCanned('Sorununuz çözülmüştür. Başka bir sorunuz olursa bizimle iletişime geçebilirsiniz.\n\nİyi günler dileriz.')">✅ Çözüldü</button>
-                            <button type="button" class="canned-btn" onclick="insertCanned('Lütfen daha detaylı bilgi verebilir misiniz?')">❓ Detay İste</button>
-                        </div>
-                        <button type="submit" class="btn btn-primary">📤 Yanıt Gönder</button>
-                    </div>
+                    <label for="durum">Durum</label>
+                    <select name="durum" id="durum" class="form-control">
+                        <?php foreach (DS_DURUMLAR as $deger => [$ad, $sinif]): ?>
+                            <option value="<?= $deger ?>" <?= $talep['status'] === $deger ? 'selected' : '' ?>>
+                                <?= $ad ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit" class="btn btn-outline">Durumu kaydet</button>
+                </form>
+
+                <form method="POST">
+                    <label for="oncelik">Öncelik</label>
+                    <select name="oncelik" id="oncelik" class="form-control">
+                        <?php foreach (DS_ONCELIKLER as $deger => [$ad, $renk]): ?>
+                            <option value="<?= $deger ?>" <?= $talep['priority'] === $deger ? 'selected' : '' ?>>
+                                <?= $ad ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit" class="btn btn-outline">Önceliği kaydet</button>
                 </form>
             </div>
         </div>
-        <?php else: ?>
-        <div class="closed-notice">
-            🔒 Bu ticket kapatılmıştır. Yeniden açmak için durum değiştirin.
-        </div>
-        <?php endif; ?>
-    </div>
-    
-    <!-- Sidebar -->
-    <div class="ticket-sidebar">
-        <!-- Client Info -->
-        <div class="ticket-card">
-            <div class="ticket-card-header">
-                <h3>👤 Müşteri Bilgileri</h3>
-            </div>
-            <div class="ticket-card-body">
-                <div class="client-info">
-                    <div class="client-avatar">
-                        <?= strtoupper(substr($ticket['first_name'] ?? 'M', 0, 1)) ?>
-                    </div>
-                    <div class="client-details">
-                        <h4><?= htmlspecialchars(($ticket['first_name'] ?? '') . ' ' . ($ticket['last_name'] ?? '')) ?></h4>
-                        <p><a href="mailto:<?= htmlspecialchars($ticket['client_email'] ?? '') ?>"><?= htmlspecialchars($ticket['client_email'] ?? '-') ?></a></p>
-                    </div>
+
+        <div class="dv-panel">
+            <div class="dv-panel-bas">Müşteri</div>
+            <div class="dv-panel-govde">
+                <div class="dv-bilgi-satir">
+                    <span>Ad soyad</span>
+                    <span><?= htmlspecialchars($adSoyad) ?></span>
                 </div>
-                <?php if ($ticket['client_id']): ?>
-                <div style="margin-top: 15px;">
-                    <a href="client-view.php?id=<?= $ticket['client_id'] ?>" class="btn btn-outline" style="width: 100%; justify-content: center;">
-                        📋 Müşteri Profilini Görüntüle
-                    </a>
+                <div class="dv-bilgi-satir">
+                    <span>E-posta</span>
+                    <span><a href="mailto:<?= htmlspecialchars($musteriEposta) ?>" dir="ltr"
+                            style="color:var(--y-primary)"><?= htmlspecialchars($musteriEposta) ?></a></span>
                 </div>
+                <?php if (!empty($talep['phone'])): ?>
+                    <div class="dv-bilgi-satir">
+                        <span>Telefon</span>
+                        <span dir="ltr"><?= htmlspecialchars((string) $talep['phone']) ?></span>
+                    </div>
+                <?php endif; ?>
+                <?php if (!empty($talep['client_id'])): ?>
+                    <a href="client-view.php?id=<?= (int) $talep['client_id'] ?>"
+                        class="btn btn-sm btn-outline">Müşteri kartı</a>
                 <?php endif; ?>
             </div>
         </div>
-        
-        <!-- Ticket Details -->
-        <div class="ticket-card">
-            <div class="ticket-card-header">
-                <h3>📋 Ticket Detayları</h3>
-            </div>
-            <div class="ticket-card-body">
-                <div class="info-item">
-                    <span class="info-label">Departman</span>
-                    <span class="info-value"><?= htmlspecialchars($ticket['department_name'] ?? 'Genel') ?></span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Durum</span>
-                    <form method="POST" style="display: inline;">
-                        <input type="hidden" name="change_status" value="1">
-                        <select name="new_status" class="quick-select" onchange="this.form.submit()">
-                            <option value="open" <?= $ticket['status'] === 'open' ? 'selected' : '' ?>>🟢 Açık</option>
-                            <option value="answered" <?= $ticket['status'] === 'answered' ? 'selected' : '' ?>>🔵 Yanıtlandı</option>
-                            <option value="on-hold" <?= $ticket['status'] === 'on-hold' ? 'selected' : '' ?>>⏸️ Beklemede</option>
-                            <option value="closed" <?= $ticket['status'] === 'closed' ? 'selected' : '' ?>>⚫ Kapalı</option>
-                        </select>
-                    </form>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Öncelik</span>
-                    <form method="POST" style="display: inline;">
-                        <input type="hidden" name="change_priority" value="1">
-                        <select name="new_priority" class="quick-select" onchange="this.form.submit()">
-                            <option value="low" <?= $ticket['priority'] === 'low' ? 'selected' : '' ?>>🟢 Düşük</option>
-                            <option value="medium" <?= $ticket['priority'] === 'medium' ? 'selected' : '' ?>>🟡 Normal</option>
-                            <option value="high" <?= $ticket['priority'] === 'high' ? 'selected' : '' ?>>🟠 Yüksek</option>
-                            <option value="urgent" <?= $ticket['priority'] === 'urgent' ? 'selected' : '' ?>>🔴 Acil</option>
-                        </select>
-                    </form>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Oluşturulma</span>
-                    <span class="info-value"><?= date('d.m.Y H:i', strtotime($ticket['created_at'])) ?></span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Son Güncelleme</span>
-                    <span class="info-value"><?= date('d.m.Y H:i', strtotime($ticket['updated_at'])) ?></span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Son Yanıt</span>
-                    <span class="info-value">
-                        <?= $ticket['last_reply_by'] === 'admin' ? '👨‍💼 Personel' : '👤 Müşteri' ?>
-                    </span>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Quick Actions -->
-        <div class="ticket-card">
-            <div class="ticket-card-header">
-                <h3>⚡ Hızlı İşlemler</h3>
-            </div>
-            <div class="ticket-card-body">
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <?php if ($ticket['status'] !== 'closed'): ?>
-                    <form method="POST">
-                        <input type="hidden" name="change_status" value="1">
-                        <input type="hidden" name="new_status" value="closed">
-                        <button type="submit" class="btn btn-danger" style="width: 100%; justify-content: center;">
-                            🔒 Ticket'ı Kapat
-                        </button>
-                    </form>
-                    <?php else: ?>
-                    <form method="POST">
-                        <input type="hidden" name="change_status" value="1">
-                        <input type="hidden" name="new_status" value="open">
-                        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
-                            🔓 Ticket'ı Yeniden Aç
-                        </button>
-                    </form>
+
+        <?php if ($hizmet): ?>
+            <div class="dv-panel">
+                <div class="dv-panel-bas">İlgili hizmet</div>
+                <div class="dv-panel-govde">
+                    <div class="dv-bilgi-satir">
+                        <span>Ürün</span>
+                        <span><?= htmlspecialchars((string) ($hizmet['urun'] ?: 'Ürün silinmiş')) ?></span>
+                    </div>
+                    <?php if (!empty($hizmet['domain'])): ?>
+                        <div class="dv-bilgi-satir">
+                            <span>Alan adı</span>
+                            <span dir="ltr"><?= htmlspecialchars((string) $hizmet['domain']) ?></span>
+                        </div>
                     <?php endif; ?>
-                    
-                    <a href="tickets.php" class="btn btn-outline" style="justify-content: center;">
-                        ← Listeye Dön
-                    </a>
+                    <a href="service-view.php?id=<?= (int) $hizmet['id'] ?>"
+                        class="btn btn-sm btn-outline">Hizmete git</a>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <div class="dv-panel">
+            <div class="dv-panel-bas">Talep bilgisi</div>
+            <div class="dv-panel-govde">
+                <div class="dv-bilgi-satir">
+                    <span>Açılış</span>
+                    <span><?= date('d.m.Y H:i', strtotime((string) $talep['created_at'])) ?></span>
+                </div>
+                <div class="dv-bilgi-satir">
+                    <span>Son hareket</span>
+                    <span><?= date('d.m.Y H:i', strtotime((string) $talep['updated_at'])) ?></span>
+                </div>
+                <div class="dv-bilgi-satir">
+                    <span>Son yanıtlayan</span>
+                    <span><?= $talep['last_reply_by'] === 'admin' ? 'Destek ekibi'
+                        : ($talep['last_reply_by'] ? 'Müşteri' : '—') ?></span>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<script>
-function insertCanned(text) {
-    const textarea = document.querySelector('.reply-textarea');
-    textarea.value = text;
-    textarea.focus();
-}
-</script>
-
-<?php include 'includes/footer.php'; ?>
-
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
