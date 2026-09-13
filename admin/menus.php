@@ -52,11 +52,11 @@ $menuCount = Database::fetchColumn("SELECT COUNT(*) FROM menu_items WHERE menu_t
 if ($menuCount == 0) {
     $defaultMenus = [
         ['main', null, 'Ana Sayfa', 'index.php', 'fa-home', '', 0],
-        ['main', null, 'Hosting', 'hosting.php', 'fa-server', 'Web hosting paketleri', 1],
-        ['main', null, 'VDS Sunucu', 'vds.php', 'fa-database', 'Virtual Dedicated Server', 2],
-        ['main', null, 'Domain', 'domain.php', 'fa-globe', 'Domain kayıt ve transfer', 3],
-        ['main', null, 'SSL', 'ssl.php', 'fa-lock', 'SSL sertifikaları', 4],
-        ['main', null, 'İletişim', 'contact.php', 'fa-envelope', 'Bize ulaşın', 5],
+        ['main', null, 'Hosting', 'web-hosting.php', 'fa-server', 'Web hosting paketleri', 1],
+        ['main', null, 'VDS Sunucu', 'vds-sunucu.php', 'fa-database', 'Virtual Dedicated Server', 2],
+        ['main', null, 'Domain', 'alan-adi.php', 'fa-globe', 'Domain kayıt ve transfer', 3],
+        ['main', null, 'SSL', 'ssl-sertifikasi.php', 'fa-lock', 'SSL sertifikaları', 4],
+        ['main', null, 'İletişim', 'iletisim.php', 'fa-envelope', 'Bize ulaşın', 5],
     ];
 
     foreach ($defaultMenus as $menu) {
@@ -1007,7 +1007,7 @@ include 'includes/header.php';
 
                 <div class="form-group">
                     <label>URL / Link</label>
-                    <input type="text" name="url" class="form-control" placeholder="Örn: hosting.php?type=linux">
+                    <input type="text" name="url" class="form-control" placeholder="Örn: web-hosting.php?type=linux">
                 </div>
 
                 <div class="form-group">

@@ -99,10 +99,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $mesaj = 'Ayarlar kaydedildi.';
         $mesajTipi = 'success';
+    } elseif ($islem === 'iade') {
+        foreach ((array) ($_POST['iade'] ?? []) as $id => $v) {
+            $id = (int) $id;
+            if ($id <= 0) {
+                continue;
+            }
+            $tur = (string) ($v['tur'] ?? 'tam');
+            if (!in_array($tur, ['tam', 'oransal', 'yok'], true)) {
+                $tur = 'tam';
+            }
+            Database::update('iade_kurallari', [
+                'ad' => mb_substr(trim((string) ($v['ad'] ?? '')), 0, 80),
+                'tur' => $tur,
+                'gun' => max(0, (int) ($v['gun'] ?? 0)),
+                'aciklama' => mb_substr(trim((string) ($v['aciklama'] ?? '')), 0, 250),
+                'is_active' => isset($v['is_active']) ? 1 : 0,
+            ], 'id = ?', [$id]);
+        }
+
+        Settings::set('iade_veri_saklama_gun', (string) max(0, (int) ($_POST['iade_veri_saklama_gun'] ?? 7)));
+        Settings::set('iade_onay_gun', (string) max(1, (int) ($_POST['iade_onay_gun'] ?? 3)));
+        Settings::set('iade_odeme_gun', (string) max(1, (int) ($_POST['iade_odeme_gun'] ?? 10)));
+
+        $refundTarih = trim((string) ($_POST['refund_yururluk'] ?? ''));
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $refundTarih) === 1) {
+            Settings::set('refund_yururluk', $refundTarih);
+        }
+
+        $mesaj = 'İade kuralları kaydedildi.';
+        $mesajTipi = 'success';
     }
 }
 
 $hizmetler = Database::fetchAll("SELECT * FROM sla_hizmetleri ORDER BY sort_order, id");
+$iadeKurallari = Database::fetchAll("SELECT * FROM iade_kurallari ORDER BY sort_order, id");
 $krediler = Database::fetchAll("SELECT * FROM sla_kredileri ORDER BY hizmet_id, sort_order");
 $sureler = Database::fetchAll("SELECT * FROM sla_yanit_sureleri ORDER BY sort_order, id");
 
@@ -488,6 +519,88 @@ require_once __DIR__ . '/includes/header.php';
                 Bu tarihler hukuki metinlerin başında görünür. Önceden her sayfa açıldığı günün
                 tarihini basıyordu; yani metin değişmese bile "bugün güncellendi" yazıyordu.
                 Metni değiştirdiğinizde tarihi de burada güncelleyin.
+            </p>
+        </form>
+    </div>
+</div>
+
+<!-- İade kuralları: iade-politikasi.php ve kullanim-sartlari.php aynı değerleri okur -->
+<div class="sl-kutu">
+    <div class="sl-kutu-basluk">İade kuralları</div>
+    <div class="sl-kutu-govde">
+        <form method="post">
+            <input type="hidden" name="islem" value="iade">
+            <table class="sl-tablo">
+                <thead>
+                    <tr>
+                        <th class="sl-orta">Hizmet</th>
+                        <th class="sl-dar">Kapsam</th>
+                        <th class="sl-dar">Süre (gün)</th>
+                        <th>Açıklama</th>
+                        <th>Etkin</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($iadeKurallari as $k): ?>
+                        <tr>
+                            <td>
+                                <input type="text" name="iade[<?= (int) $k['id'] ?>][ad]"
+                                    value="<?= htmlspecialchars((string) $k['ad']) ?>">
+                            </td>
+                            <td>
+                                <select name="iade[<?= (int) $k['id'] ?>][tur]"
+                                    style="width: 100%; padding: 7px 9px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px;">
+                                    <option value="tam" <?= $k['tur'] === 'tam' ? 'selected' : '' ?>>Tam iade</option>
+                                    <option value="oransal" <?= $k['tur'] === 'oransal' ? 'selected' : '' ?>>Oransal
+                                    </option>
+                                    <option value="yok" <?= $k['tur'] === 'yok' ? 'selected' : '' ?>>İade yok</option>
+                                </select>
+                            </td>
+                            <td>
+                                <input type="number" step="1" min="0" name="iade[<?= (int) $k['id'] ?>][gun]"
+                                    value="<?= (int) $k['gun'] ?>">
+                            </td>
+                            <td>
+                                <input type="text" maxlength="250" name="iade[<?= (int) $k['id'] ?>][aciklama]"
+                                    value="<?= htmlspecialchars((string) ($k['aciklama'] ?? '')) ?>">
+                            </td>
+                            <td>
+                                <input type="checkbox" name="iade[<?= (int) $k['id'] ?>][is_active]" value="1"
+                                    <?= (int) $k['is_active'] === 1 ? 'checked' : '' ?>>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <div class="sl-ayar" style="margin-top: 18px;">
+                <div>
+                    <label for="iade_veri_saklama_gun">İptal sonrası veri saklama (gün)</label>
+                    <input type="number" id="iade_veri_saklama_gun" name="iade_veri_saklama_gun" step="1" min="0"
+                        value="<?= (int) Settings::get('iade_veri_saklama_gun', 7) ?>">
+                </div>
+                <div>
+                    <label for="iade_onay_gun">Talep değerlendirme (iş günü)</label>
+                    <input type="number" id="iade_onay_gun" name="iade_onay_gun" step="1" min="1"
+                        value="<?= (int) Settings::get('iade_onay_gun', 3) ?>">
+                </div>
+                <div>
+                    <label for="iade_odeme_gun">İadenin başlatılması (iş günü)</label>
+                    <input type="number" id="iade_odeme_gun" name="iade_odeme_gun" step="1" min="1"
+                        value="<?= (int) Settings::get('iade_odeme_gun', 10) ?>">
+                </div>
+                <div>
+                    <label for="refund_yururluk">İade Politikası tarihi</label>
+                    <input type="date" id="refund_yururluk" name="refund_yururluk"
+                        value="<?= htmlspecialchars((string) Settings::get('refund_yururluk', '')) ?>">
+                </div>
+            </div>
+
+            <div class="sl-alt"><button type="submit" class="btn btn-primary">Kaydet</button></div>
+            <p class="sl-not">
+                Veri saklama süresini hem İade Politikası hem Kullanım Şartları okur; iki sayfa
+                farklı gün söyleyemez. Oransal iade seçilen hizmetlerde sayfada hesap formülü
+                ve örnek gösterilir.
             </p>
         </form>
     </div>

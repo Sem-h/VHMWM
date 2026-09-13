@@ -667,7 +667,7 @@ foreach ($groups as $group) {
                             </div>
                         </div>
                         <div class="group-link">
-                            <a href="<?= SITE_URL ?>/store.php?group=<?= htmlspecialchars($group['slug']) ?>" target="_blank"
+                            <a href="<?= SITE_URL ?>/magaza.php?group=<?= htmlspecialchars($group['slug']) ?>" target="_blank"
                                 title="Sayfayı Görüntüle">
                                 <i class="fas fa-external-link-alt"></i>
                             </a>

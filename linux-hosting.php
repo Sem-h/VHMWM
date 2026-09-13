@@ -490,7 +490,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                             <li><i class="fas fa-check"></i> 7/24 Destek</li>
                         <?php endif; ?>
                     </ul>
-                    <a href="cart.php?add=<?= $product['id'] ?>" class="btn <?= $isPopular ? 'btn-linux' : 'btn-outline' ?>">
+                    <a href="sepet.php?add=<?= $product['id'] ?>" class="btn <?= $isPopular ? 'btn-linux' : 'btn-outline' ?>">
                         Sipariş Ver
                     </a>
                 </div>
@@ -519,7 +519,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> cPanel</li>
                         <li><i class="fas fa-check"></i> LiteSpeed</li>
                     </ul>
-                    <a href="cart.php" class="btn btn-outline">Sipariş Ver</a>
+                    <a href="sepet.php" class="btn btn-outline">Sipariş Ver</a>
                 </div>
             </div>
             <div class="hosting-card popular">
@@ -542,7 +542,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> cPanel + Softaculous</li>
                         <li><i class="fas fa-check"></i> LiteSpeed + Redis</li>
                     </ul>
-                    <a href="cart.php" class="btn btn-linux">Sipariş Ver</a>
+                    <a href="sepet.php" class="btn btn-linux">Sipariş Ver</a>
                 </div>
             </div>
             <div class="hosting-card">
@@ -564,7 +564,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> Imunify360</li>
                         <li><i class="fas fa-check"></i> JetBackup</li>
                     </ul>
-                    <a href="cart.php" class="btn btn-outline">Sipariş Ver</a>
+                    <a href="sepet.php" class="btn btn-outline">Sipariş Ver</a>
                 </div>
             </div>
             <div class="hosting-card">
@@ -586,7 +586,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> Öncelikli Destek</li>
                         <li><i class="fas fa-check"></i> SSH Erişimi</li>
                     </ul>
-                    <a href="cart.php" class="btn btn-outline">Sipariş Ver</a>
+                    <a href="sepet.php" class="btn btn-outline">Sipariş Ver</a>
                 </div>
             </div>
         </div>
@@ -706,7 +706,7 @@ require_once __DIR__ . '/theme/includes/header.php';
     <div class="container">
         <h2>Linux Hosting ile Başlayın</h2>
         <p>30 gün para iade garantisi ile risk almadan deneyin.</p>
-        <a href="cart.php?add=linux-pro" class="btn btn-lg">
+        <a href="sepet.php?add=linux-pro" class="btn btn-lg">
             <i class="fas fa-shopping-cart"></i>
             Hemen Sipariş Ver
         </a>

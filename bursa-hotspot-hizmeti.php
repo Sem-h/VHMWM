@@ -1929,7 +1929,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <p>Keşif öncesi en çok merak edilenleri derledik.</p>
                     </div>
 
-                    <a href="contact.php" class="hs-faq-help">
+                    <a href="iletisim.php" class="hs-faq-help">
                         <i class="fas fa-headset"></i>
                         <div>
                             <b>Sorunuz listede yok mu?</b>
@@ -2025,7 +2025,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                 <a href="#paketler" class="hs-final-btn">
                     <i class="fas fa-wifi"></i> Paketleri İncele
                 </a>
-                <a href="contact.php" class="hs-final-link">
+                <a href="iletisim.php" class="hs-final-link">
                     <i class="fas fa-phone"></i> Ücretsiz Keşif İsteyin
                 </a>
             </div>

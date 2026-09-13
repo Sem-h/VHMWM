@@ -84,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'domain' => $hostname, 'billing_cycle' => $billingCycle, 'price' => $price, 'setup_fee' => $setupFee,
             'config_options' => $configDetails, 'config_total' => $configTotal, 'total' => $price + $configTotal + $setupFee, 'added_at' => time()
         ];
-        header('Location: /cart.php'); exit;
+        header('Location: /sepet.php'); exit;
     }
 }
 

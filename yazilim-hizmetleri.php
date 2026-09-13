@@ -1,7 +1,7 @@
 <?php
 /**
  * WHMVM - Yazılım Hizmetleri Sayfası
- * store.php?group=windows-hosting tasarımı referans alınarak
+ * magaza.php?group=windows-hosting tasarımı referans alınarak
  */
 
 declare(strict_types=1);
@@ -739,7 +739,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> CMS Entegrasyonu</li>
                         <li><i class="fas fa-check"></i> SEO Optimizasyonu</li>
                     </ul>
-                    <a href="contact.php" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
             
@@ -759,7 +759,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> Flutter</li>
                         <li><i class="fas fa-check"></i> App Store Yayınlama</li>
                     </ul>
-                    <a href="contact.php" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
             
@@ -779,7 +779,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> İş Süreç Yönetimi</li>
                         <li><i class="fas fa-check"></i> API Geliştirme</li>
                     </ul>
-                    <a href="contact.php" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
             
@@ -799,7 +799,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> Grafik Tasarım</li>
                         <li><i class="fas fa-check"></i> Prototipleme</li>
                     </ul>
-                    <a href="contact.php" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
             
@@ -819,7 +819,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> Ödeme Entegrasyonu</li>
                         <li><i class="fas fa-check"></i> Stok Yönetimi</li>
                     </ul>
-                    <a href="contact.php" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
             
@@ -839,7 +839,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> Yedekleme</li>
                         <li><i class="fas fa-check"></i> Performans Optimizasyonu</li>
                     </ul>
-                    <a href="contact.php" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
         </div>
@@ -875,7 +875,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> 3 Ay Destek</li>
                         <li><i class="fas fa-check"></i> Temel Eğitim</li>
                     </ul>
-                    <a href="contact.php?package=temel" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php?package=temel" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
             
@@ -899,7 +899,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> CMS Entegrasyonu</li>
                         <li><i class="fas fa-check"></i> Eğitim & Dokümantasyon</li>
                     </ul>
-                    <a href="contact.php?package=profesyonel" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php?package=profesyonel" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
             
@@ -922,7 +922,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> Öncelikli Destek</li>
                         <li><i class="fas fa-check"></i> Özel Eğitim</li>
                     </ul>
-                    <a href="contact.php?package=kurumsal" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php?package=kurumsal" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
             
@@ -945,7 +945,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         <li><i class="fas fa-check"></i> Sürekli Destek</li>
                         <li><i class="fas fa-check"></i> Özel Anlaşma</li>
                     </ul>
-                    <a href="contact.php?package=ozel" class="soft-btn">Teklif Al</a>
+                    <a href="iletisim.php?package=ozel" class="soft-btn">Teklif Al</a>
                 </div>
             </div>
         </div>
@@ -1003,7 +1003,7 @@ require_once __DIR__ . '/theme/includes/header.php';
     <div class="container">
         <h3>Projenizi Hayata Geçirmeye Hazır mısınız?</h3>
         <p>Uzman ekibimizle iletişime geçin ve projeniz için özel teklif alın.</p>
-        <a href="contact.php" class="soft-cta-btn">
+        <a href="iletisim.php" class="soft-cta-btn">
             <i class="fas fa-paper-plane"></i> Hemen İletişime Geçin
         </a>
     </div>

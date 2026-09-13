@@ -942,8 +942,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="checkbox-group">
                             <input type="checkbox" name="terms" id="terms" required>
                             <label for="terms">
-                                <a href="../terms.php">Kullanım Şartları</a>'nı ve 
-                                <a href="../privacy.php">Gizlilik Politikası</a>'nı okudum ve kabul ediyorum.
+                                <a href="../kullanim-sartlari.php">Kullanım Şartları</a>'nı ve 
+                                <a href="../gizlilik-politikasi.php">Gizlilik Politikası</a>'nı okudum ve kabul ediyorum.
                             </label>
                         </div>
                         

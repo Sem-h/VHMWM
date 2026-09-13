@@ -69,49 +69,49 @@ function getDefaultMenu(string $menuType): array
             ['title' => 'Ana Sayfa', 'url' => 'index.php', 'icon' => 'fa-home'],
             [
                 'title' => 'Hosting',
-                'url' => 'store.php?group=linux-hosting',
+                'url' => 'magaza.php?group=linux-hosting',
                 'icon' => 'fa-server',
                 'children' => [
                     [
                         'title' => 'Hosting Hizmetleri',
                         'children' => [
-                            ['title' => 'Linux Web Hosting', 'url' => 'store.php?group=linux-hosting', 'icon' => 'fa-server', 'description' => 'Yüksek Performanslı Linux Web Hosting hizmetimiz ile web siteleriniz uçacak!'],
-                            ['title' => 'Kurumsal Hosting', 'url' => 'store.php?group=kurumsal-hosting', 'icon' => 'fa-building', 'description' => 'Tamamen Yüksek kaynaklar ile yapılandırılmış Kurumsal Hosting paketlerimiz ile trafik ve mail sorunu yaşamayacaksınız!'],
+                            ['title' => 'Linux Web Hosting', 'url' => 'magaza.php?group=linux-hosting', 'icon' => 'fa-server', 'description' => 'Yüksek Performanslı Linux Web Hosting hizmetimiz ile web siteleriniz uçacak!'],
+                            ['title' => 'Kurumsal Hosting', 'url' => 'magaza.php?group=kurumsal-hosting', 'icon' => 'fa-building', 'description' => 'Tamamen Yüksek kaynaklar ile yapılandırılmış Kurumsal Hosting paketlerimiz ile trafik ve mail sorunu yaşamayacaksınız!'],
                         ]
                     ],
                     [
                         'title' => 'E-Ticaret Hosting',
                         'children' => [
-                            ['title' => 'Web Site Builder', 'url' => 'store.php?group=website-builder', 'icon' => 'fa-shopping-basket', 'description' => 'Hazır websitesi aracı ile Harika bir web sitesi oluşturmak için hızlıca sipariş verebilirsiniz!.'],
-                            ['title' => 'Windows Hosting', 'url' => 'store.php?group=windows-hosting', 'icon' => 'fa-windows', 'description' => 'Web Sitenizde ASP, .NET, MVC MSSQL gibi teknolojileri kullanıyorsanız, Windows planlarımıza göz atmanızı öneririz.'],
+                            ['title' => 'Web Site Builder', 'url' => 'magaza.php?group=website-builder', 'icon' => 'fa-shopping-basket', 'description' => 'Hazır websitesi aracı ile Harika bir web sitesi oluşturmak için hızlıca sipariş verebilirsiniz!.'],
+                            ['title' => 'Windows Hosting', 'url' => 'magaza.php?group=windows-hosting', 'icon' => 'fa-windows', 'description' => 'Web Sitenizde ASP, .NET, MVC MSSQL gibi teknolojileri kullanıyorsanız, Windows planlarımıza göz atmanızı öneririz.'],
                         ]
                     ],
                     [
                         'title' => 'Hosting Hizmetleri',
                         'children' => [
-                            ['title' => 'Wordpress Hosting', 'url' => 'store.php?group=wordpress-hosting', 'icon' => 'fa-wordpress', 'description' => 'Wordpress Hosting paketimiz sayesinde ziyaretçilerinize hızlı bir blog sunun!'],
-                            ['title' => 'Arşiv Hosting', 'url' => 'store.php?group=arsiv-hosting', 'icon' => 'fa-archive', 'description' => 'Tablet, Telefon, Bilgisayar cihazlarınız üzerinde bulundurduğunuz dosya ve yedeklere her an her yerden erişmek ve düzenlemek ister misiniz?'],
+                            ['title' => 'Wordpress Hosting', 'url' => 'magaza.php?group=wordpress-hosting', 'icon' => 'fa-wordpress', 'description' => 'Wordpress Hosting paketimiz sayesinde ziyaretçilerinize hızlı bir blog sunun!'],
+                            ['title' => 'Arşiv Hosting', 'url' => 'magaza.php?group=arsiv-hosting', 'icon' => 'fa-archive', 'description' => 'Tablet, Telefon, Bilgisayar cihazlarınız üzerinde bulundurduğunuz dosya ve yedeklere her an her yerden erişmek ve düzenlemek ister misiniz?'],
                         ]
                     ]
                 ]
             ],
             [
                 'title' => 'Sunucu',
-                'url' => 'vds.php',
+                'url' => 'vds-sunucu.php',
                 'icon' => 'fa-database',
                 'children' => [
                     [
                         'title' => 'Sunucu Çözümleri',
                         'children' => [
-                            ['title' => 'VDS Sunucu', 'url' => 'vds.php', 'icon' => 'fa-hdd', 'description' => 'Tam sanallaştırma ile izole kaynaklar.'],
-                            ['title' => 'Dedicated Sunucu', 'url' => 'store.php?group=fiziksel-sunucu', 'icon' => 'fa-server', 'description' => 'Fiziksel sunucu performansı.'],
+                            ['title' => 'VDS Sunucu', 'url' => 'vds-sunucu.php', 'icon' => 'fa-hdd', 'description' => 'Tam sanallaştırma ile izole kaynaklar.'],
+                            ['title' => 'Dedicated Sunucu', 'url' => 'magaza.php?group=fiziksel-sunucu', 'icon' => 'fa-server', 'description' => 'Fiziksel sunucu performansı.'],
                         ]
                     ]
                 ]
             ],
-            ['title' => 'Domain', 'url' => 'domain.php', 'icon' => 'fa-globe'],
-            ['title' => 'SSL Sertifikası', 'url' => 'ssl.php', 'icon' => 'fa-lock'],
-            ['title' => 'İletişim', 'url' => 'contact.php', 'icon' => 'fa-envelope'],
+            ['title' => 'Domain', 'url' => 'alan-adi.php', 'icon' => 'fa-globe'],
+            ['title' => 'SSL Sertifikası', 'url' => 'ssl-sertifikasi.php', 'icon' => 'fa-lock'],
+            ['title' => 'İletişim', 'url' => 'iletisim.php', 'icon' => 'fa-envelope'],
         ];
     }
     return [];
@@ -227,40 +227,40 @@ $footerLinks = [
     'services' => [
         'title' => 'Hizmetlerimiz',
         'links' => [
-            ['label' => 'Web Hosting', 'url' => 'store.php?group=linux-hosting'],
-            ['label' => 'VDS Sunucu', 'url' => 'vds.php'],
-            ['label' => 'Cloud Sunucu', 'url' => 'cloud.php'],
-            ['label' => 'Dedicated Sunucu', 'url' => 'store.php?group=fiziksel-sunucu'],
-            ['label' => 'Domain Kaydı', 'url' => 'domain.php'],
-            ['label' => 'SSL Sertifikası', 'url' => 'ssl.php'],
+            ['label' => 'Web Hosting', 'url' => 'magaza.php?group=linux-hosting'],
+            ['label' => 'VDS Sunucu', 'url' => 'vds-sunucu.php'],
+            ['label' => 'Cloud Sunucu', 'url' => 'bulut-sunucu.php'],
+            ['label' => 'Dedicated Sunucu', 'url' => 'magaza.php?group=fiziksel-sunucu'],
+            ['label' => 'Domain Kaydı', 'url' => 'alan-adi.php'],
+            ['label' => 'SSL Sertifikası', 'url' => 'ssl-sertifikasi.php'],
         ]
     ],
     'company' => [
         'title' => 'Kurumsal',
         'links' => [
-            ['label' => 'Hakkımızda', 'url' => 'about.php'],
-            ['label' => 'İletişim', 'url' => 'contact.php'],
+            ['label' => 'Hakkımızda', 'url' => 'hakkimizda.php'],
+            ['label' => 'İletişim', 'url' => 'iletisim.php'],
             ['label' => 'Referanslar', 'url' => 'referanslar.php'],
             ['label' => 'Blog', 'url' => 'blog.php'],
-            ['label' => 'Kariyer', 'url' => 'career.php'],
+            ['label' => 'Kariyer', 'url' => 'kariyer.php'],
         ]
     ],
     'support' => [
         'title' => 'Destek',
         'links' => [
-            ['label' => 'Bilgi Bankası', 'url' => 'knowledgebase.php'],
+            ['label' => 'Bilgi Bankası', 'url' => 'bilgi-bankasi.php'],
             ['label' => 'Destek Talebi', 'url' => 'client/tickets.php'],
-            ['label' => 'Sunucu Durumu', 'url' => 'status.php'],
+            ['label' => 'Sunucu Durumu', 'url' => 'sistem-durumu.php'],
             ['label' => 'SLA', 'url' => 'sla.php'],
         ]
     ],
     'legal' => [
         'title' => 'Yasal',
         'links' => [
-            ['label' => 'Kullanım Şartları', 'url' => 'terms.php'],
-            ['label' => 'Gizlilik Politikası', 'url' => 'privacy.php'],
+            ['label' => 'Kullanım Şartları', 'url' => 'kullanim-sartlari.php'],
+            ['label' => 'Gizlilik Politikası', 'url' => 'gizlilik-politikasi.php'],
             ['label' => 'KVKK', 'url' => 'kvkk.php'],
-            ['label' => 'İptal ve İade', 'url' => 'refund.php'],
+            ['label' => 'İptal ve İade', 'url' => 'iade-politikasi.php'],
         ]
     ]
 ];

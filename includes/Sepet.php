@@ -2,7 +2,7 @@
 /**
  * VHM - Sepet hesabı
  *
- * Sepetin tek doğru kaynağı. cart.php gösterir, client/checkout.php tahsil
+ * Sepetin tek doğru kaynağı. sepet.php gösterir, client/checkout.php tahsil
  * eder; ikisi de bu sınıfı kullanır, böylece ekrandaki tutar ile faturaya
  * yazılan tutar ayrışamaz.
  *

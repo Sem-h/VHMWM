@@ -175,7 +175,7 @@ require_once __DIR__ . '/theme/includes/header.php';
             <p>haklarına sahipsiniz.</p>
 
             <h2>7. Başvuru</h2>
-            <p>Haklarınızı kullanmak için <a href="contact.php" style="color: var(--primary-light);">iletişim sayfamızdan</a> veya <?= htmlspecialchars($iletisimEposta) ?> adresinden bize ulaşabilirsiniz.</p>
+            <p>Haklarınızı kullanmak için <a href="iletisim.php" style="color: var(--primary-light);">iletişim sayfamızdan</a> veya <?= htmlspecialchars($iletisimEposta) ?> adresinden bize ulaşabilirsiniz.</p>
         </div>
     </div>
 </section>

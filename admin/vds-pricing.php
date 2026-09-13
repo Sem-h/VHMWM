@@ -413,7 +413,7 @@ include 'includes/header.php';
 
 <div class="pricing-header">
     <h2><i class="fas fa-server"></i> VDS Fiyatlandırma</h2>
-    <a href="<?= SITE_URL ?>/vds.php" target="_blank" class="btn btn-outline">
+    <a href="<?= SITE_URL ?>/vds-sunucu.php" target="_blank" class="btn btn-outline">
         <i class="fas fa-external-link-alt"></i> Sayfayı Görüntüle
     </a>
 </div>

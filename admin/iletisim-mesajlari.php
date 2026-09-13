@@ -2,7 +2,7 @@
 /**
  * VHM - Admin İletişim Mesajları
  *
- * contact.php üzerindeki iletişim formundan gelen mesajları listeler ve
+ * iletisim.php üzerindeki iletişim formundan gelen mesajları listeler ve
  * durumlarını günceller. Keşif talepleri sayfasıyla aynı akışı kullanır.
  */
 

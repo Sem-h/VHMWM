@@ -594,10 +594,10 @@ require_once __DIR__ . '/theme/includes/header.php';
                 <p>Projeniz için uygun altyapıyı birlikte belirleyelim. Önce ihtiyacınızı dinler,
                     sonra teklif hazırlarız.</p>
                 <div class="rf-cta-row">
-                    <a href="contact.php#iletisim-formu" class="rf-btn rf-btn-primary">
+                    <a href="iletisim.php#iletisim-formu" class="rf-btn rf-btn-primary">
                         <i class="fas fa-envelope"></i> Bize ulaşın
                     </a>
-                    <a href="store.php" class="rf-btn rf-btn-outline">
+                    <a href="magaza.php" class="rf-btn rf-btn-outline">
                         <i class="fas fa-server"></i> Hizmetlerimiz
                     </a>
                 </div>

@@ -2,7 +2,7 @@
 /**
  * VHM - Admin Bilgi Bankası
  *
- * knowledgebase.php sayfasındaki kategoriler ve makaleler buradan yönetilir.
+ * bilgi-bankasi.php sayfasındaki kategoriler ve makaleler buradan yönetilir.
  * Makale metni kaydedilmeden önce GuvenliHtml ile temizlenir; beyaz listede
  * olmayan etiket ve öznitelikler atılır.
  */
@@ -575,7 +575,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="bb-eylem">
                     <?php if ($duzenleTur === 'makale'): ?>
                         <a href="bilgi-bankasi.php">Vazgeç</a>
-                        <a href="../knowledgebase.php?makale=<?= urlencode((string) $duzenle['slug']) ?>"
+                        <a href="../bilgi-bankasi.php?makale=<?= urlencode((string) $duzenle['slug']) ?>"
                             target="_blank">Sitede gör</a>
                     <?php endif; ?>
                     <button type="submit" class="btn btn-primary">

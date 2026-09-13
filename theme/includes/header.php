@@ -113,7 +113,7 @@ if ($userTheme === 'auto') {
                         <?= htmlspecialchars($companyEmail) ?>
                     </a>
                 <?php endif; ?>
-                <a href="status.php" class="top-status">
+                <a href="sistem-durumu.php" class="top-status">
                     <i class="fas fa-wave-square"></i>
                     <?= Lang::e('ustbar.sistem-durumu', 'Sistem Durumu') ?>
                     <span class="top-dot" aria-hidden="true"></span>
@@ -268,7 +268,7 @@ if ($userTheme === 'auto') {
             
             <!-- Header Actions -->
             <div class="header-actions">
-                <a href="cart.php" class="icon-btn" title="<?= Lang::e('ortak.sepet', 'Sepet') ?>"
+                <a href="sepet.php" class="icon-btn" title="<?= Lang::e('ortak.sepet', 'Sepet') ?>"
                     aria-label="<?= Lang::e('ortak.sepet', 'Sepet') ?>">
                     <i class="fas fa-shopping-cart"></i>
                 </a>

@@ -96,7 +96,7 @@ if ($action === 'add' && $productId) {
         }
         
         // Sepet sayfasına yönlendir
-        header('Location: /cart.php');
+        header('Location: /sepet.php');
         exit;
     }
 }

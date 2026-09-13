@@ -642,7 +642,7 @@ if (isset($_GET['logout'])) {
             </a>
             <a href="<?= $adminPath ?>sla.php"
                 class="menu-item <?= ($currentPage ?? '') === 'sla' ? 'active' : '' ?>">
-                <span class="icon">📄</span> SLA Yönetimi
+                <span class="icon">📄</span> SLA ve İade Kuralları
             </a>
             <a href="<?= $adminPath ?>bilgi-bankasi.php"
                 class="menu-item <?= ($currentPage ?? '') === 'bilgi-bankasi' ? 'active' : '' ?>">

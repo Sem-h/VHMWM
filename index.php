@@ -35,7 +35,7 @@ $dcLines = [
         'slug' => 'co-location',
         'name' => 'Kabinet Barındırma',
         'desc' => 'Kendi donanımınızı veri merkezimizde barındırın. Güç, soğutma ve bağlantı bizden.',
-        'url' => 'store.php?group=co-location',
+        'url' => 'magaza.php?group=co-location',
         'kunye' => [
             ['Kabinet tipi', 'Tam / yarım / U bazlı'],
             ['Enerji', 'Ölçümlenen besleme'],
@@ -47,7 +47,7 @@ $dcLines = [
         'slug' => 'fiziksel-sunucu',
         'name' => 'Fiziksel Sunucu',
         'desc' => 'Kaynaklarını kimseyle paylaşmayan, tamamen size tahsis edilmiş donanım.',
-        'url' => 'store.php?group=fiziksel-sunucu',
+        'url' => 'magaza.php?group=fiziksel-sunucu',
         'kunye' => [
             ['Donanım', 'Tamamen size tahsisli'],
             ['Depolama', 'NVMe SSD'],
@@ -59,7 +59,7 @@ $dcLines = [
         'slug' => 'vds',
         'name' => 'Sanal Sunucu (VDS)',
         'desc' => 'İşlemci, bellek ve diski kendiniz belirleyin; dakikalar içinde teslim.',
-        'url' => 'vds.php',
+        'url' => 'vds-sunucu.php',
         'kunye' => [
             ['Yapılandırma', 'vCPU, RAM ve disk size ait'],
             ['Sanallaştırma', 'KVM'],
@@ -71,7 +71,7 @@ $dcLines = [
         'slug' => 'btk-log-sunucu',
         'name' => 'Yasal Log Kaydı',
         'desc' => '5651 sayılı kanun kapsamında zaman damgalı erişim kaydı saklama.',
-        'url' => 'store.php?group=btk-log-sunucu',
+        'url' => 'magaza.php?group=btk-log-sunucu',
         'kunye' => [
             ['Kapsam', '5651 sayılı kanun'],
             ['Kayıt', 'Zaman damgalı, imzalı'],
@@ -119,7 +119,7 @@ foreach ($dcLines as $i => $l) {
     }
     // Satista paketi olmayan hat, magaza yerine teklif formuna yonlendirilir
     if ((int) ($dcLines[$i]['adet'] ?? 0) === 0) {
-        $dcLines[$i]['url'] = 'contact.php';
+        $dcLines[$i]['url'] = 'iletisim.php';
         $dcLines[$i]['fiyat'] = null;
     }
 }
@@ -172,7 +172,7 @@ try {
         $dcCatalog[] = [
             'slug' => $g['slug'],
             'name' => $g['name'],
-            'url' => 'store.php?group=' . $g['slug'],
+            'url' => 'magaza.php?group=' . $g['slug'],
             'note' => $dcCatalogMeta[$g['slug']],
             'fiyat' => $g['fiyat'] !== null ? (float) $g['fiyat'] : null,
             'adet' => (int) $g['adet'],
@@ -1493,7 +1493,7 @@ require_once __DIR__ . '/theme/includes/header.php';
             </p>
 
             <div class="dc-actions">
-                <a href="contact.php" class="btn btn-primary">
+                <a href="iletisim.php" class="btn btn-primary">
                     <?= Lang::e('ortak.teklif-alin', 'Teklif Alın') ?> <i class="fas fa-arrow-right"></i>
                 </a>
                 <a href="#hizmetler" class="btn btn-outline"><?= Lang::e('ortak.hizmetleri-inceleyin', 'Hizmetleri İnceleyin') ?></a>
@@ -2269,7 +2269,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                     <h2><?= Lang::e('iletisim.baslik', 'Tesisimizi yerinde görmek ister misiniz?') ?></h2>
                     <p><?= Lang::e('iletisim.aciklama', 'Kabinet ihtiyacınızı, enerji ve bağlantı gereksinimlerinizi konuşalım. Randevu oluşturup veri merkezimizi yerinde inceleyebilirsiniz.') ?></p>
                 </div>
-                <a href="contact.php" class="btn btn-primary">
+                <a href="iletisim.php" class="btn btn-primary">
                     <?= Lang::e('iletisim.randevu', 'Randevu Talep Edin') ?>
                 </a>
             </div>

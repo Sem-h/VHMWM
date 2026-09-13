@@ -272,7 +272,7 @@ try {
 <div class="domains-card">
     <div class="domains-card-header">
         <h3><i class="fas fa-list"></i> Domain Listesi</h3>
-        <a href="../domain.php" class="btn btn-primary" style="padding: 10px 20px; font-size: 14px;">
+        <a href="../alan-adi.php" class="btn btn-primary" style="padding: 10px 20px; font-size: 14px;">
             <i class="fas fa-plus"></i> Yeni Domain
         </a>
     </div>
@@ -282,7 +282,7 @@ try {
         <i class="fas fa-globe"></i>
         <h3>Henüz domain bulunmuyor</h3>
         <p>Yeni bir domain kaydedin veya transfer edin.</p>
-        <a href="../domain.php" class="btn btn-primary">
+        <a href="../alan-adi.php" class="btn btn-primary">
             <i class="fas fa-plus"></i> Domain Kaydet
         </a>
     </div>

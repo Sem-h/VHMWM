@@ -568,6 +568,21 @@ CREATE TABLE `hizmet_sokaklari` (
   CONSTRAINT `fk_sokak_mahalle` FOREIGN KEY (`mahalle_id`) REFERENCES `hizmet_mahalleleri` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=518 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `iade_kurallari`;
+
+CREATE TABLE `iade_kurallari` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `kod` varchar(40) NOT NULL,
+  `ad` varchar(80) NOT NULL,
+  `tur` enum('tam','oransal','yok') NOT NULL DEFAULT 'tam',
+  `gun` int(11) NOT NULL DEFAULT 0,
+  `aciklama` varchar(250) DEFAULT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `u_kod` (`kod`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `iletisim_mesajlari`;
 
 CREATE TABLE `iletisim_mesajlari` (
@@ -689,7 +704,7 @@ CREATE TABLE `kb_makaleler` (
   KEY `k_aktif` (`is_active`),
   FULLTEXT KEY `f_arama` (`baslik`,`ozet`,`icerik`),
   CONSTRAINT `fk_kb_makale_kategori` FOREIGN KEY (`kategori_id`) REFERENCES `kb_kategoriler` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `kesif_talepleri`;
 
@@ -1202,7 +1217,7 @@ CREATE TABLE `settings` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `setting_key` (`setting_key`),
   KEY `idx_group` (`setting_group`)
-) ENGINE=InnoDB AUTO_INCREMENT=282 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=298 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `sla_hizmetleri`;
 
@@ -1373,7 +1388,7 @@ CREATE TABLE `translations` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_dil_anahtar` (`lang_code`,`t_key`),
   KEY `idx_anahtar` (`t_key`)
-) ENGINE=InnoDB AUTO_INCREMENT=5551 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9429 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `vds_pricing`;
 

@@ -678,7 +678,7 @@ require_once __DIR__ . '/theme/includes/header.php';
                         </ul>
                         <p class="sla-note">
                             Bu belge <?= htmlspecialchars($sirket) ?> tarafından sunulan hizmetler için
-                            geçerlidir ve <a href="terms.php">Kullanım Şartları</a> ile birlikte
+                            geçerlidir ve <a href="kullanim-sartlari.php">Kullanım Şartları</a> ile birlikte
                             değerlendirilir.
                         </p>
                     </div>
