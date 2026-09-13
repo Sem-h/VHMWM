@@ -7,8 +7,8 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
     header('Location: index.php');
@@ -105,9 +105,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // Silme
-if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
+/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+    Guvenlik::zorunlu();
     try {
-        Database::query("DELETE FROM bank_accounts WHERE id = ?", [$_GET['delete']]);
+        Database::query("DELETE FROM bank_accounts WHERE id = ?", [$_POST['delete']]);
         $message = 'Banka hesabı silindi!';
     } catch (Exception $e) {
         $message = 'Hata: ' . $e->getMessage();
@@ -292,7 +294,7 @@ include 'includes/header.php';
                                 <a href="?toggle=<?= $account['id'] ?>" class="btn btn-sm btn-<?= $account['is_active'] ? 'warning' : 'success' ?>" title="Durum Değiştir">
                                     <i class="fas fa-<?= $account['is_active'] ? 'eye-slash' : 'eye' ?>"></i>
                                 </a>
-                                <a href="?delete=<?= $account['id'] ?>" class="btn btn-sm btn-danger" 
+                                <a href="#" onclick="confirmDelete('Bu banka hesabı silinsin mi?', '?delete=<?= (int) $account['id'] ?>'); return false;" class="btn btn-sm btn-danger" 
                                    onclick="return confirm('Bu banka hesabını silmek istediğinize emin misiniz?')" title="Sil">
                                     <i class="fas fa-trash"></i>
                                 </a>

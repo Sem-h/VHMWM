@@ -8,8 +8,8 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
     header('Location: index.php');
@@ -94,12 +94,13 @@ function referansLogoYukle(?array $dosya): array
 }
 
 // İşlemler (Silme, Ekleme, Güncelleme)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['delete'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $db = Database::getInstance();
     try {
-        if (isset($_GET['delete'])) {
+        if (isset($_POST['delete'])) {
+            Guvenlik::zorunlu();
             $stmt = $db->prepare("DELETE FROM `references` WHERE id = ?");
-            $stmt->execute([(int) $_GET['delete']]);
+            $stmt->execute([(int) $_POST['delete']]);
             $msg = ['type' => 'success', 'text' => 'Referans silindi.'];
         } else {
             $id = (int) ($_POST['id'] ?? 0);

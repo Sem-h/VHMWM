@@ -5,7 +5,8 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-session_name(SESSION_NAME); session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
     header('Location: index.php');
@@ -19,8 +20,10 @@ $message = '';
 $messageType = 'success';
 
 // Silme
-if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
-    Database::query("DELETE FROM products WHERE id = ?", [$_GET['delete']]);
+/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+    Guvenlik::zorunlu();
+    Database::query("DELETE FROM products WHERE id = ?", [$_POST['delete']]);
     $message = 'Ürün silindi.';
 }
 

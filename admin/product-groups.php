@@ -5,8 +5,8 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
     header('Location: index.php');
@@ -20,14 +20,16 @@ $message = '';
 $messageType = 'success';
 
 // Silme işlemi
-if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
+/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+    Guvenlik::zorunlu();
     // Önce bu gruba ait ürün var mı kontrol et
-    $productCount = Database::fetchColumn("SELECT COUNT(*) FROM products WHERE group_id = ?", [$_GET['delete']]);
+    $productCount = Database::fetchColumn("SELECT COUNT(*) FROM products WHERE group_id = ?", [$_POST['delete']]);
     if ($productCount > 0) {
         $message = "Bu gruba ait $productCount ürün var. Önce ürünleri başka bir gruba taşıyın veya silin.";
         $messageType = 'danger';
     } else {
-        Database::query("DELETE FROM product_groups WHERE id = ?", [$_GET['delete']]);
+        Database::query("DELETE FROM product_groups WHERE id = ?", [$_POST['delete']]);
         $message = 'Grup silindi.';
     }
 }

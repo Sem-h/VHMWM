@@ -9,10 +9,11 @@ header('Content-Type: application/json; charset=UTF-8');
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/WHMApi.php';
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
+    http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Yetkisiz erişim']);
     exit;
 }

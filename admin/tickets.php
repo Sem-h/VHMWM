@@ -2,7 +2,8 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-session_name(SESSION_NAME); session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 $pageTitle = 'Destek Talepleri';
 $currentPage = 'tickets';
@@ -10,9 +11,11 @@ $db = Database::getInstance();
 $message = '';
 
 // Durum güncelleme
-if (isset($_GET['close']) && is_numeric($_GET['close'])) {
+/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['close']) && is_numeric($_POST['close'])) {
+    Guvenlik::zorunlu();
     $stmt = $db->prepare("UPDATE tickets SET status = 'closed' WHERE id = ?");
-    $stmt->execute([$_GET['close']]);
+    $stmt->execute([$_POST['close']]);
     $message = 'Ticket kapatıldı.';
 }
 
@@ -139,7 +142,7 @@ include 'includes/header.php';
                         <td class="actions">
                             <a href="ticket-view.php?id=<?= $ticket['id'] ?>" class="btn btn-sm btn-primary">Görüntüle</a>
                             <?php if ($ticket['status'] !== 'closed'): ?>
-                                <a href="?close=<?= $ticket['id'] ?>" class="btn btn-sm btn-outline">Kapat</a>
+                                <a href="#" onclick="confirmDelete('Bu destek talebi kapatılsın mı?', '?close=<?= (int) $ticket['id'] ?>'); return false;" class="btn btn-sm btn-outline">Kapat</a>
                             <?php endif; ?>
                         </td>
                     </tr>

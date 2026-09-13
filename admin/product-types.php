@@ -5,8 +5,8 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
     header('Location: index.php');
@@ -58,14 +58,16 @@ try {
 }
 
 // Silme işlemi
-if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
+/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+    Guvenlik::zorunlu();
     // Bu türü kullanan grup var mı kontrol et
-    $groupCount = Database::fetchColumn("SELECT COUNT(*) FROM product_groups WHERE type = (SELECT slug FROM product_types WHERE id = ?)", [$_GET['delete']]);
+    $groupCount = Database::fetchColumn("SELECT COUNT(*) FROM product_groups WHERE type = (SELECT slug FROM product_types WHERE id = ?)", [$_POST['delete']]);
     if ($groupCount > 0) {
         $message = "Bu türü kullanan $groupCount grup var. Önce grupların türünü değiştirin.";
         $messageType = 'danger';
     } else {
-        Database::query("DELETE FROM product_types WHERE id = ?", [$_GET['delete']]);
+        Database::query("DELETE FROM product_types WHERE id = ?", [$_POST['delete']]);
         $message = 'Tür silindi.';
     }
 }
@@ -634,12 +636,6 @@ include 'includes/header.php';
         // Remove selected from all
         el.parentElement.querySelectorAll('.emoji-item').forEach(i => i.classList.remove('selected'));
         el.classList.add('selected');
-    }
-
-    function confirmDelete(message, url) {
-        if (confirm(message)) {
-            window.location.href = url;
-        }
     }
 
     // Modal dışına tıklayınca kapat

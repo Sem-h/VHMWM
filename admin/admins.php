@@ -2,7 +2,8 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-session_name(SESSION_NAME); session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 $pageTitle = 'Yöneticiler';
 $currentPage = 'admins';
@@ -13,10 +14,12 @@ $message = '';
 $isSuperAdmin = ($_SESSION['admin_role'] ?? '') === 'super_admin';
 
 // Silme
-if ($isSuperAdmin && isset($_GET['delete']) && is_numeric($_GET['delete'])) {
-    if ((int)$_GET['delete'] !== (int)$_SESSION['admin_id']) {
+/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $isSuperAdmin && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+    Guvenlik::zorunlu();
+    if ((int)$_POST['delete'] !== (int)$_SESSION['admin_id']) {
         $stmt = $db->prepare("DELETE FROM admins WHERE id = ?");
-        $stmt->execute([$_GET['delete']]);
+        $stmt->execute([$_POST['delete']]);
         $message = 'Yönetici silindi.';
     }
 }

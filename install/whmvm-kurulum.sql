@@ -535,6 +535,19 @@ CREATE TABLE `esxi_servers` (
   KEY `idx_status` (`last_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `giris_denemeleri`;
+
+CREATE TABLE `giris_denemeleri` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `kullanici` varchar(150) NOT NULL,
+  `ip` varchar(45) DEFAULT NULL,
+  `basarili` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `k_kullanici` (`kullanici`,`created_at`),
+  KEY `k_ip` (`ip`,`created_at`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `hizmet_mahalleleri`;
 
 CREATE TABLE `hizmet_mahalleleri` (
@@ -997,7 +1010,7 @@ CREATE TABLE `product_types` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `slug` (`slug`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `products`;
 

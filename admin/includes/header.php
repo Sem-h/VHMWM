@@ -22,6 +22,8 @@ if (isset($_GET['logout'])) {
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php /* Durum değiştiren istekler bu belirteci taşır */ ?>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Guvenlik::token(), ENT_QUOTES, 'UTF-8') ?>">
     <title><?= $pageTitle ?? 'Admin' ?> - <?= SITE_NAME ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

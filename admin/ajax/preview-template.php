@@ -10,11 +10,12 @@ require_once dirname(__DIR__, 2) . '/includes/Database.php';
 require_once dirname(__DIR__, 2) . '/includes/Settings.php';
 require_once dirname(__DIR__, 2) . '/includes/Mail.php';
 
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__, 2) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 // Admin kontrolü
 if (!isset($_SESSION['admin_id'])) {
+    http_response_code(401);
     echo '<p>Yetkisiz erişim</p>';
     exit;
 }

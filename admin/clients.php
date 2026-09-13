@@ -2,8 +2,8 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 $pageTitle = 'Müşteriler';
 $currentPage = 'clients';
@@ -12,9 +12,11 @@ $message = '';
 $messageType = '';
 
 // Silme işlemi
-if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
+/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+    Guvenlik::zorunlu();
     $stmt = $db->prepare("DELETE FROM clients WHERE id = ?");
-    $stmt->execute([$_GET['delete']]);
+    $stmt->execute([$_POST['delete']]);
     $message = 'Müşteri silindi.';
     $messageType = 'success';
 }

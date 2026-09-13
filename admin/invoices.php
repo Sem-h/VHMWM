@@ -10,7 +10,8 @@ require_once dirname(__DIR__) . '/includes/Mail.php';
 require_once dirname(__DIR__) . '/includes/ClientLog.php';
 require_once dirname(__DIR__) . '/includes/Affiliate.php';
 require_once dirname(__DIR__) . '/includes/OrderLog.php';
-session_name(SESSION_NAME); session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
     header('Location: index.php');

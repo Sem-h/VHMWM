@@ -9,8 +9,8 @@ require_once dirname(__DIR__, 2) . '/config/config.php';
 require_once dirname(__DIR__, 2) . '/includes/Database.php';
 
 // Oturum kontrolü
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__, 2) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 // Oturum kontrolü
 if (!isset($_SESSION['admin_id'])) {

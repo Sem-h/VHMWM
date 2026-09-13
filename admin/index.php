@@ -15,8 +15,8 @@ if (!file_exists(dirname(__DIR__) . '/config/config.php')) {
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 
-session_name(SESSION_NAME);
-session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 // Zaten giriş yapmışsa dashboard'a yönlendir
 if (isset($_SESSION['admin_id'])) {
@@ -35,13 +35,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Kullanıcı adı ve şifre gereklidir.';
     } else {
         try {
+            // Art arda başarısız denemeden sonra geçici kilit
+            $kalan = Guvenlik::kilitliMi($username);
+            if ($kalan > 0) {
+                $error = 'Çok fazla başarısız deneme yapıldı. '
+                    . ceil($kalan / 60) . ' dakika sonra tekrar deneyin.';
+                throw new RuntimeException('kilitli');
+            }
+
             $db = Database::getInstance();
             $stmt = $db->prepare("SELECT * FROM admins WHERE (username = ? OR email = ?) AND is_active = 1");
             $stmt->execute([$username, $username]);
             $admin = $stmt->fetch();
             
             if ($admin && password_verify($password, $admin['password'])) {
-                // Giriş başarılı
+                // Giriş başarılı. Oturum kimliği yenilenir; aksi hâlde
+                // saldırganın önceden bildiği bir kimlik yetkili hâle gelir.
+                Guvenlik::denemeKaydet($username, true);
+                Guvenlik::denemeleriSil($username);
+                Guvenlik::kimlikYenile();
+
                 $_SESSION['admin_id'] = $admin['id'];
                 $_SESSION['admin_username'] = $admin['username'];
                 $_SESSION['admin_role'] = $admin['role'];
@@ -54,10 +67,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: dashboard.php');
                 exit;
             } else {
+                Guvenlik::denemeKaydet($username, false);
                 $error = 'Geçersiz kullanıcı adı veya şifre.';
             }
-        } catch (Exception $e) {
-            $error = 'Bir hata oluştu. Lütfen tekrar deneyin.';
+        } catch (Throwable $e) {
+            // Kilit mesajı zaten atanmışsa üzerine yazma
+            if ($error === '') {
+                error_log('Yönetici girişi hatası: ' . $e->getMessage());
+                $error = 'Bir hata oluştu. Lütfen tekrar deneyin.';
+            }
         }
     }
 }

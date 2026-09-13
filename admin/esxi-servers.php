@@ -11,7 +11,8 @@ if (file_exists(dirname(__DIR__) . '/vendor/autoload.php')) {
     require_once dirname(__DIR__) . '/vendor/autoload.php';
 }
 require_once dirname(__DIR__) . '/includes/ESXi.php';
-session_name(SESSION_NAME); session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
     header('Location: index.php');
@@ -199,6 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Sunucu sil
     if (isset($_POST['delete_server'])) {
+        Guvenlik::zorunlu();
         $serverId = (int)$_POST['server_id'];
         Database::query("DELETE FROM esxi_servers WHERE id = ?", [$serverId]);
         // Redirect to prevent refresh re-submission
@@ -839,6 +841,7 @@ include 'includes/header.php';
 
 <!-- Delete Form -->
 <form id="deleteForm" method="POST" style="display: none;">
+    <?= Guvenlik::alan() ?>
     <input type="hidden" name="server_id" id="delete_server_id">
     <input type="hidden" name="delete_server" value="1">
 </form>
