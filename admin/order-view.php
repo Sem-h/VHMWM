@@ -1,566 +1,691 @@
 <?php
+/**
+ * VHM - Sipariş detayı
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - Oturum kontrolü yoktu. header.php sayfanın sonunda çağrıldığı için
+ *     yetkisiz bir POST siparişi etkinleştirip hizmet açabiliyordu.
+ *   - Hizmet oluşturma kodu aynı dosyada iki kez yazılmıştı; dönem
+ *     eşlemesi eksik, "zaten var mı" kontrolü hatalıydı. includes/Siparis.php
+ *     içine taşındı.
+ *   - Durum doğrudan $_POST'tan alınıyordu; enum dışı değer yazılabiliyordu.
+ *   - PRG yoktu; yenilemede işlem tekrarlanıyordu.
+ */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Settings.php';
-require_once dirname(__DIR__) . '/includes/Mail.php';
-require_once dirname(__DIR__) . '/includes/OrderLog.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+require_once dirname(__DIR__) . '/includes/Siparis.php';
 Guvenlik::oturumBaslat();
 
-$pageTitle = 'Sipariş Detayı';
-$currentPage = 'orders';
-$db = Database::getInstance();
+if (!isset($_SESSION['admin_id'])) {
+    header('Location: index.php');
+    exit;
+}
 
-$orderId = (int)($_GET['id'] ?? 0);
-$message = '';
+$id = (int) ($_GET['id'] ?? 0);
 
-// Sipariş bilgilerini çek
-$stmt = $db->prepare("
-    SELECT o.*, c.first_name, c.last_name, c.email, c.phone, c.company_name
-    FROM orders o 
-    LEFT JOIN clients c ON o.client_id = c.id 
-    WHERE o.id = ?
-");
-$stmt->execute([$orderId]);
-$order = $stmt->fetch();
+$siparis = $id > 0 ? Database::fetch(
+    "SELECT o.*, c.first_name, c.last_name, c.email, c.phone, c.company_name
+       FROM orders o
+       LEFT JOIN clients c ON c.id = o.client_id
+      WHERE o.id = ?",
+    [$id]
+) : null;
 
-if (!$order) {
+if (!$siparis) {
+    $_SESSION['sip_mesaj'] = ['tip' => 'error', 'metin' => 'Sipariş bulunamadı.'];
     header('Location: orders.php');
     exit;
 }
 
-// Durum güncelleme
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['status'])) {
-    $oldStatus = $order['status'];
-    $newStatus = $_POST['status'];
-    $stmt = $db->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ?");
-    $stmt->execute([$newStatus, $orderId]);
-    
-    // Sipariş durumu değişikliği logu
-    OrderLog::statusChanged($orderId, $oldStatus, $newStatus, $_SESSION['admin_id'] ?? null, $order['client_id']);
-    
-    // Sipariş onaylandığında hizmetleri oluştur ve mail gönder
-    if ($newStatus === 'active' && $oldStatus !== 'active') {
-        // Sipariş kalemlerini al ve hizmet oluştur
-        $orderItems = Database::fetchAll("SELECT * FROM order_items WHERE order_id = ?", [$orderId]);
-        
-        foreach ($orderItems as $item) {
-            // Bu sipariş kalemi için zaten hizmet var mı kontrol et
-            $existingService = Database::fetch("SELECT id FROM services WHERE order_id = ? AND product_id = ?", [$orderId, $item['product_id']]);
-            
-            if (!$existingService && $item['product_id']) {
-                // Yeni hizmet oluştur
-                $nextDueDate = date('Y-m-d', strtotime('+1 month'));
-                if ($item['billing_cycle'] === 'quarterly') $nextDueDate = date('Y-m-d', strtotime('+3 months'));
-                elseif ($item['billing_cycle'] === 'semiannually') $nextDueDate = date('Y-m-d', strtotime('+6 months'));
-                elseif ($item['billing_cycle'] === 'annually') $nextDueDate = date('Y-m-d', strtotime('+1 year'));
-                
-                Database::query("
-                    INSERT INTO services (client_id, order_id, product_id, domain, status, billing_cycle, amount, registration_date, next_due_date, created_at)
-                    VALUES (?, ?, ?, ?, 'pending', ?, ?, CURDATE(), ?, NOW())
-                ", [
-                    $order['client_id'],
-                    $orderId,
-                    $item['product_id'],
-                    $item['domain'],
-                    $item['billing_cycle'] ?? 'monthly',
-                    $item['unit_price'],
-                    $nextDueDate
-                ]);
-                
-                $serviceId = $db->lastInsertId();
-                OrderLog::serviceCreated($orderId, $serviceId, $_SESSION['admin_id'] ?? null, $order['client_id']);
+function siparisDon(string $tip, string $metin, int $id): never
+{
+    $_SESSION['sd_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: order-view.php?id=' . $id);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    Guvenlik::zorunlu();
+    $adminId = (int) ($_SESSION['admin_id'] ?? 0) ?: null;
+
+    try {
+        if (isset($_POST['durum'])) {
+            $adet = Siparis::durumDegistir($id, (string) $_POST['durum'], $adminId);
+            siparisDon(
+                'success',
+                'Sipariş durumu güncellendi.' . ($adet > 0 ? ' ' . $adet . ' hizmet oluşturuldu.' : ''),
+                $id
+            );
+        }
+
+        if (isset($_POST['hizmet_olustur'])) {
+            $olusan = Siparis::hizmetleriOlustur($id, $adminId);
+            if (!$olusan) {
+                siparisDon('uyari', 'Bu siparişin tüm kalemleri için hizmet zaten mevcut.', $id);
             }
-        }
-        
-        try {
-            $productNames = array_column($orderItems, 'description');
-            
-            Mail::sendTemplate('order_confirmed', $order['email'], [
-                'client_name' => $order['first_name'] . ' ' . $order['last_name'],
-                'order_id' => $order['order_number'],
-                'product_name' => implode(', ', $productNames)
-            ], $order['first_name']);
-        } catch (Throwable $e) {
-            // Mail hatası işlemi engellemesin
-        }
-    }
-    
-    $order['status'] = $newStatus;
-    $message = 'Sipariş durumu güncellendi.';
-}
-
-// Manuel hizmet oluşturma
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_service'])) {
-    $itemId = (int)$_POST['item_id'];
-    $item = Database::fetch("SELECT * FROM order_items WHERE id = ? AND order_id = ?", [$itemId, $orderId]);
-    
-    if ($item) {
-        $existingService = Database::fetch("SELECT id FROM services WHERE order_id = ? AND product_id = ?", [$orderId, $item['product_id']]);
-        
-        if (!$existingService) {
-            $nextDueDate = date('Y-m-d', strtotime('+1 month'));
-            if ($item['billing_cycle'] === 'quarterly') $nextDueDate = date('Y-m-d', strtotime('+3 months'));
-            elseif ($item['billing_cycle'] === 'semiannually') $nextDueDate = date('Y-m-d', strtotime('+6 months'));
-            elseif ($item['billing_cycle'] === 'annually') $nextDueDate = date('Y-m-d', strtotime('+1 year'));
-            
-            Database::query("
-                INSERT INTO services (client_id, order_id, product_id, domain, status, billing_cycle, amount, registration_date, next_due_date, created_at)
-                VALUES (?, ?, ?, ?, 'pending', ?, ?, CURDATE(), ?, NOW())
-            ", [
-                $order['client_id'],
-                $orderId,
-                $item['product_id'],
-                $item['domain'],
-                $item['billing_cycle'] ?? 'monthly',
-                $item['unit_price'],
-                $nextDueDate
-            ]);
-            
-            $newServiceId = $db->lastInsertId();
-            OrderLog::serviceCreated($orderId, $newServiceId, $_SESSION['admin_id'] ?? null, $order['client_id']);
-            header("Location: service-edit.php?id=$newServiceId");
+            header('Location: service-edit.php?id=' . $olusan[0]);
             exit;
-        } else {
-            $message = 'Bu sipariş kalemi için zaten bir hizmet mevcut.';
         }
+
+        siparisDon('error', 'Tanımsız işlem.', $id);
+    } catch (RuntimeException $e) {
+        siparisDon('error', $e->getMessage(), $id);
     }
 }
 
-// Sipariş kalemleri
-$items = $db->query("
-    SELECT oi.*, p.name as product_name, p.type as product_type
-    FROM order_items oi 
-    LEFT JOIN products p ON oi.product_id = p.id 
-    WHERE oi.order_id = $orderId
-")->fetchAll();
+$mesaj = null;
+if (!empty($_SESSION['sd_mesaj'])) {
+    $mesaj = $_SESSION['sd_mesaj'];
+    unset($_SESSION['sd_mesaj']);
+}
 
-// İlgili hizmetler
-$services = $db->query("SELECT * FROM services WHERE order_id = $orderId")->fetchAll();
+$kalemler = Database::fetchAll(
+    "SELECT oi.*, p.name AS urun, p.type AS urun_tipi
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = ?
+      ORDER BY oi.id",
+    [$id]
+);
 
-// İlgili faturalar
-$invoices = $db->query("
-    SELECT i.* FROM invoices i 
-    INNER JOIN invoice_items ii ON i.id = ii.invoice_id 
-    INNER JOIN services s ON ii.service_id = s.id 
-    WHERE s.order_id = $orderId 
-    GROUP BY i.id
-")->fetchAll();
+$hizmetler = Database::fetchAll(
+    "SELECT s.*, p.name AS urun
+       FROM services s
+       LEFT JOIN products p ON p.id = s.product_id
+      WHERE s.order_id = ?
+      ORDER BY s.id",
+    [$id]
+);
 
-include 'includes/header.php';
+$faturalar = Database::fetchAll(
+    "SELECT DISTINCT i.*
+       FROM invoices i
+       JOIN invoice_items ii ON ii.invoice_id = i.id
+       JOIN services s ON s.id = ii.service_id
+      WHERE s.order_id = ?
+      ORDER BY i.created_at DESC",
+    [$id]
+);
+
+$gunluk = [];
+try {
+    $gunluk = Database::fetchAll(
+        "SELECT * FROM order_logs WHERE order_id = ? ORDER BY created_at DESC LIMIT 25",
+        [$id]
+    );
+} catch (Throwable $e) {
+    error_log('Sipariş günlüğü okunamadı: ' . $e->getMessage());
+}
+
+$durumSinifi = [
+    'pending' => 'badge-warning', 'processing' => 'badge-info', 'active' => 'badge-success',
+    'fraud' => 'badge-danger', 'cancelled' => 'badge',
+];
+$hizmetDurum = [
+    'active' => ['Etkin', 'badge-success'], 'pending' => ['Bekliyor', 'badge-warning'],
+    'suspended' => ['Askıda', 'badge-danger'], 'terminated' => ['Sonlandırıldı', 'badge'],
+    'cancelled' => ['İptal', 'badge'],
+];
+$faturaDurum = [
+    'draft' => ['Taslak', 'badge'], 'unpaid' => ['Ödenmedi', 'badge-warning'],
+    'paid' => ['Ödendi', 'badge-success'], 'cancelled' => ['İptal', 'badge'],
+    'refunded' => ['İade', 'badge-info'], 'collections' => ['Takipte', 'badge-danger'],
+];
+$donemler = [
+    'monthly' => 'Aylık', 'quarterly' => '3 aylık', 'semiannually' => '6 aylık',
+    'annually' => 'Yıllık', 'biennially' => '2 yıllık', 'triennially' => '3 yıllık',
+    'onetime' => 'Tek seferlik',
+];
+
+$paraBirimi = (string) ($siparis['currency'] ?: 'TRY');
+$adSoyad = trim((string) $siparis['first_name'] . ' ' . (string) $siparis['last_name']);
+$eksikHizmet = count($kalemler) > count($hizmetler);
+
+function svPara(float $t, string $b): string
+{
+    return number_format($t, 2, ',', '.') . ' ' . $b;
+}
+
+$pageTitle = 'Sipariş ' . ($siparis['order_number'] ?: '#' . $id);
+$currentPage = 'orders';
+require_once __DIR__ . '/includes/header.php';
 ?>
 
-<?php if ($message): ?>
-    <div class="alert alert-success"><?= $message ?></div>
-<?php endif; ?>
+<style>
+    /* ==========================================
+       Sipariş detayı - sv
+       ========================================== */
+    .sv-duzen {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        gap: 18px;
+        align-items: start;
+    }
 
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+    .sv-panel {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
+
+    .sv-panel + .sv-panel {
+        margin-top: 18px;
+    }
+
+    .sv-panel-bas {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .sv-panel-bas h3 {
+        font-size: 12.5px;
+        font-weight: 700;
+    }
+
+    .sv-panel-govde {
+        padding: 16px;
+    }
+
+    .sv-kalem {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+    }
+
+    .sv-kalem:last-child {
+        border-bottom: none;
+    }
+
+    .sv-kalem-ikon {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 13px;
+    }
+
+    .sv-kalem-orta {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sv-kalem-orta b {
+        display: block;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .sv-etiketler {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 5px;
+    }
+
+    .sv-etiket {
+        padding: 2px 8px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 999px;
+        font-size: 11px;
+        color: var(--y-metin-3);
+    }
+
+    .sv-kalem-fiyat {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .sv-kalem-fiyat b {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--y-metin);
+    }
+
+    .sv-kalem-fiyat span {
+        display: block;
+        margin-top: 2px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .sv-ozet {
+        padding: 14px 16px;
+        border-top: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .sv-ozet-satir {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 5px 0;
+        font-size: 13px;
+        color: var(--y-metin-2);
+    }
+
+    .sv-ozet-satir.buyuk {
+        margin-top: 6px;
+        padding-top: 10px;
+        border-top: 1px solid var(--y-cizgi);
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--y-metin);
+    }
+
+    .sv-ozet-satir.buyuk span:last-child {
+        color: var(--y-primary);
+    }
+
+    .sv-tablo {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .sv-tablo td {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+    }
+
+    .sv-tablo tr:last-child td {
+        border-bottom: none;
+    }
+
+    .sv-tablo tr:hover td {
+        background: var(--y-yuzey-2);
+    }
+
+    .sv-tablo b {
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .sv-tablo span {
+        display: block;
+        margin-top: 1px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .sv-sag {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .sv-bilgi-satir {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+        font-size: 13px;
+    }
+
+    .sv-bilgi-satir:last-child {
+        border-bottom: none;
+    }
+
+    .sv-bilgi-satir span:first-child {
+        color: var(--y-metin-3);
+    }
+
+    .sv-bilgi-satir span:last-child {
+        color: var(--y-metin);
+        text-align: right;
+        word-break: break-word;
+    }
+
+    .sv-gunluk {
+        position: relative;
+        padding: 0 16px 14px 34px;
+    }
+
+    .sv-gunluk::before {
+        content: "";
+        position: absolute;
+        left: 21px;
+        top: 6px;
+        bottom: 20px;
+        width: 1px;
+        background: var(--y-cizgi);
+    }
+
+    .sv-gunluk-oge {
+        position: relative;
+        padding: 9px 0;
+        font-size: 12.5px;
+        color: var(--y-metin-2);
+    }
+
+    .sv-gunluk-oge::before {
+        content: "";
+        position: absolute;
+        left: -17px;
+        top: 15px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--y-primary);
+        box-shadow: 0 0 0 3px var(--y-yuzey);
+    }
+
+    .sv-gunluk-oge time {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        color: var(--y-metin-3);
+    }
+
+    .sv-bos {
+        padding: 24px 16px;
+        text-align: center;
+        font-size: 13px;
+        color: var(--y-metin-3);
+    }
+
+    .sv-islem {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+    }
+
+    .sv-islem form {
+        margin: 0;
+    }
+
+    .sv-islem .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .sv-islem label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    @media (max-width: 980px) {
+        .sv-duzen {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
+</style>
+
+<div class="page-header">
     <div>
-        <a href="orders.php" style="color: var(--gray); text-decoration: none; font-size: 14px;">← Siparişlere Dön</a>
-        <h2 style="margin-top: 10px;">Sipariş <?= htmlspecialchars($order['order_number']) ?></h2>
+        <h1>Sipariş <?= htmlspecialchars((string) ($siparis['order_number'] ?: '#' . $id)) ?></h1>
+        <p><a href="orders.php">Siparişler</a> &rsaquo;
+            <?= htmlspecialchars($adSoyad !== '' ? $adSoyad : 'Müşteri silinmiş') ?> &middot;
+            <?= date('d.m.Y H:i', strtotime((string) $siparis['created_at'])) ?></p>
     </div>
-    <div style="display: flex; gap: 10px; align-items: center;">
-        <?php
-        $statusBadge = match($order['status']) {
-            'active' => 'success',
-            'pending' => 'warning',
-            'processing' => 'info',
-            'cancelled', 'fraud' => 'danger',
-            default => 'gray'
-        };
-        ?>
-        <span class="badge badge-<?= $statusBadge ?>" style="font-size: 14px; padding: 10px 20px;">
-            <?= ucfirst($order['status']) ?>
-        </span>
-    </div>
+    <span class="badge <?= $durumSinifi[$siparis['status']] ?? 'badge' ?>" style="font-size:12.5px;padding:7px 14px">
+        <?= Siparis::DURUMLAR[$siparis['status']] ?? htmlspecialchars((string) $siparis['status']) ?>
+    </span>
 </div>
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= htmlspecialchars($mesaj['tip']) ?>">
+        <?= htmlspecialchars($mesaj['metin']) ?>
+    </div>
+<?php endif; ?>
+
+<div class="sv-duzen">
     <div>
-        <!-- Sipariş Kalemleri -->
-        <div class="card">
-            <div class="card-header">
-                <h3>📦 Sipariş Kalemleri</h3>
+        <div class="sv-panel">
+            <div class="sv-panel-bas">
+                <h3>Sipariş kalemleri</h3>
+                <span style="font-size:12px;color:var(--y-metin-3)"><?= count($kalemler) ?> kalem</span>
             </div>
-            <div class="card-body" style="padding: 0;">
-                <?php foreach ($items as $index => $item): ?>
-                <div class="order-item-card">
-                    <div class="order-item-header" onclick="toggleItemDetail(<?= $index ?>)">
-                        <div class="item-main">
-                            <span class="item-toggle"><i class="fas fa-chevron-right" id="toggle-icon-<?= $index ?>"></i></span>
-                            <div class="item-info">
-                                <strong class="item-name"><?= htmlspecialchars($item['product_name'] ?? $item['description']) ?></strong>
-                                <?php if ($item['domain']): ?>
-                                <span class="item-domain"><?= htmlspecialchars($item['domain']) ?></span>
+
+            <?php if (!$kalemler): ?>
+                <div class="sv-bos">Bu siparişte kalem yok.</div>
+            <?php else: ?>
+                <?php foreach ($kalemler as $k): ?>
+                    <div class="sv-kalem">
+                        <span class="sv-kalem-ikon"><i class="fas fa-box"></i></span>
+                        <div class="sv-kalem-orta">
+                            <b><?= htmlspecialchars((string) ($k['urun'] ?: $k['description'])) ?></b>
+                            <div class="sv-etiketler">
+                                <?php if (!empty($k['domain'])): ?>
+                                    <span class="sv-etiket"><?= htmlspecialchars((string) $k['domain']) ?></span>
+                                <?php endif; ?>
+                                <span class="sv-etiket"><?= $donemler[$k['billing_cycle']] ?? htmlspecialchars((string) $k['billing_cycle']) ?></span>
+                                <?php if ((int) $k['quantity'] > 1): ?>
+                                    <span class="sv-etiket"><?= (int) $k['quantity'] ?> adet</span>
+                                <?php endif; ?>
+                                <?php if ((float) $k['setup_fee'] > 0): ?>
+                                    <span class="sv-etiket">Kurulum <?= svPara((float) $k['setup_fee'], $paraBirimi) ?></span>
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <div class="item-price">
-                            <strong><?= number_format((float)$item['total'], 2) ?> ₺</strong>
+                        <div class="sv-kalem-fiyat">
+                            <b><?= svPara((float) $k['total'], $paraBirimi) ?></b>
+                            <span><?= svPara((float) $k['unit_price'], $paraBirimi) ?> birim</span>
                         </div>
                     </div>
-                    <div class="order-item-detail" id="item-detail-<?= $index ?>" style="display: none;">
-                        <div class="detail-grid">
-                            <div class="detail-box">
-                                <label>Ürün ID</label>
-                                <span><?= $item['product_id'] ?? '-' ?></span>
-                            </div>
-                            <div class="detail-box">
-                                <label>Domain / Hostname</label>
-                                <span class="domain-value"><?= htmlspecialchars($item['domain'] ?? 'Belirtilmemiş') ?></span>
-                            </div>
-                            <div class="detail-box">
-                                <label>Fatura Dönemi</label>
-                                <span><?php 
-                                    echo match($item['billing_cycle'] ?? 'monthly') {
-                                        'monthly' => 'Aylık',
-                                        'quarterly' => '3 Aylık',
-                                        'semiannually' => '6 Aylık',
-                                        'annually' => 'Yıllık',
-                                        'biennially' => '2 Yıllık',
-                                        'triennially' => '3 Yıllık',
-                                        default => ucfirst($item['billing_cycle'] ?? 'Aylık')
-                                    };
-                                ?></span>
-                            </div>
-                            <div class="detail-box">
-                                <label>Birim Fiyat</label>
-                                <span><?= number_format((float)$item['unit_price'], 2) ?> ₺</span>
-                            </div>
-                            <div class="detail-box">
-                                <label>Kurulum Ücreti</label>
-                                <span><?= number_format((float)($item['setup_fee'] ?? 0), 2) ?> ₺</span>
-                            </div>
-                            <div class="detail-box">
-                                <label>Miktar</label>
-                                <span><?= $item['quantity'] ?? 1 ?> Adet</span>
-                            </div>
-                        </div>
-                        <div class="detail-description">
-                            <label>Açıklama</label>
-                            <p><?= htmlspecialchars($item['description'] ?? '-') ?></p>
-                        </div>
-                        <?php if ($item['product_id']): 
-                            // Bu kalem için hizmet var mı kontrol et
-                            $itemService = Database::fetch("SELECT id FROM services WHERE order_id = ? AND product_id = ?", [$orderId, $item['product_id']]);
-                        ?>
-                        <div class="detail-actions">
-                            <a href="product-edit.php?id=<?= $item['product_id'] ?>" class="btn btn-sm btn-outline">
-                                <i class="fas fa-box"></i> Ürünü Görüntüle
-                            </a>
-                            <?php if ($itemService): ?>
-                            <a href="service-edit.php?id=<?= $itemService['id'] ?>" class="btn btn-sm btn-primary">
-                                <i class="fas fa-cog"></i> Hizmeti Düzenle
-                            </a>
-                            <?php else: ?>
-                            <form method="POST" style="display: inline;" onclick="event.stopPropagation();">
-                                <input type="hidden" name="item_id" value="<?= $item['id'] ?>">
-                                <button type="submit" name="create_service" value="1" class="btn btn-sm btn-success">
-                                    <i class="fas fa-plus"></i> Hizmet Oluştur
-                                </button>
-                            </form>
-                            <?php endif; ?>
-                        </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
                 <?php endforeach; ?>
-                
-                <?php if (empty($items)): ?>
-                <div style="padding: 40px; text-align: center; color: var(--gray);">
-                    <i class="fas fa-inbox" style="font-size: 40px; margin-bottom: 15px;"></i>
-                    <p>Sipariş kalemi bulunamadı</p>
+
+                <div class="sv-ozet">
+                    <div class="sv-ozet-satir">
+                        <span>Ara toplam</span>
+                        <span><?= svPara((float) $siparis['subtotal'], $paraBirimi) ?></span>
+                    </div>
+                    <?php if ((float) $siparis['discount'] > 0): ?>
+                        <div class="sv-ozet-satir">
+                            <span>İndirim<?= !empty($siparis['promo_code'])
+                                ? ' (' . htmlspecialchars((string) $siparis['promo_code']) . ')' : '' ?></span>
+                            <span>−<?= svPara((float) $siparis['discount'], $paraBirimi) ?></span>
+                        </div>
+                    <?php endif; ?>
+                    <div class="sv-ozet-satir">
+                        <span>KDV</span>
+                        <span><?= svPara((float) $siparis['tax'], $paraBirimi) ?></span>
+                    </div>
+                    <div class="sv-ozet-satir buyuk">
+                        <span>Genel toplam</span>
+                        <span><?= svPara((float) $siparis['total'], $paraBirimi) ?></span>
+                    </div>
                 </div>
-                <?php endif; ?>
-            </div>
+            <?php endif; ?>
         </div>
-        
-        <style>
-        .order-item-card {
-            border-bottom: 1px solid var(--border);
-        }
-        .order-item-card:last-child {
-            border-bottom: none;
-        }
-        .order-item-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 20px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .order-item-header:hover {
-            background: rgba(99, 102, 241, 0.05);
-        }
-        .item-main {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .item-toggle {
-            width: 28px;
-            height: 28px;
-            background: var(--bg-secondary);
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-        .item-toggle i {
-            font-size: 12px;
-            color: var(--gray);
-            transition: transform 0.2s;
-        }
-        .item-toggle.open i {
-            transform: rotate(90deg);
-        }
-        .item-info {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .item-name {
-            font-size: 15px;
-            color: var(--text);
-        }
-        .item-domain {
-            font-size: 13px;
-            color: var(--primary);
-            background: rgba(99, 102, 241, 0.1);
-            padding: 2px 8px;
-            border-radius: 4px;
-            display: inline-block;
-        }
-        .item-price {
-            font-size: 16px;
-            color: var(--text);
-        }
-        .order-item-detail {
-            background: var(--bg-secondary);
-            padding: 20px;
-            border-top: 1px solid var(--border);
-        }
-        .detail-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-        .detail-box {
-            background: var(--bg-card);
-            padding: 12px 16px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-        }
-        .detail-box label {
-            display: block;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--gray);
-            margin-bottom: 4px;
-        }
-        .detail-box span {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text);
-        }
-        .detail-box .domain-value {
-            color: var(--primary);
-        }
-        .detail-description {
-            background: var(--bg-card);
-            padding: 12px 16px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            margin-bottom: 16px;
-        }
-        .detail-description label {
-            display: block;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--gray);
-            margin-bottom: 8px;
-        }
-        .detail-description p {
-            margin: 0;
-            font-size: 14px;
-            color: var(--text);
-            line-height: 1.5;
-        }
-        .detail-actions {
-            display: flex;
-            gap: 10px;
-        }
-        @media (max-width: 768px) {
-            .detail-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-        </style>
-        
-        <script>
-        function toggleItemDetail(index) {
-            const detail = document.getElementById('item-detail-' + index);
-            const icon = document.getElementById('toggle-icon-' + index);
-            const toggle = icon.closest('.item-toggle');
-            
-            if (detail.style.display === 'none') {
-                detail.style.display = 'block';
-                toggle.classList.add('open');
-            } else {
-                detail.style.display = 'none';
-                toggle.classList.remove('open');
-            }
-        }
-        </script>
-        
-        <!-- İlgili Hizmetler -->
-        <?php if (!empty($services)): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>🔗 İlgili Hizmetler</h3>
+
+        <div class="sv-panel">
+            <div class="sv-panel-bas">
+                <h3>Oluşan hizmetler</h3>
+                <span style="font-size:12px;color:var(--y-metin-3)"><?= count($hizmetler) ?> hizmet</span>
             </div>
-            <div class="card-body">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Domain</th>
-                            <th>Durum</th>
-                            <th>Sonraki Vade</th>
-                            <th>İşlem</th>
-                        </tr>
-                    </thead>
+            <?php if (!$hizmetler): ?>
+                <div class="sv-bos">Bu sipariş için henüz hizmet açılmadı.</div>
+            <?php else: ?>
+                <table class="sv-tablo">
                     <tbody>
-                        <?php foreach ($services as $service): ?>
-                        <tr>
-                            <td>#<?= $service['id'] ?></td>
-                            <td><?= htmlspecialchars($service['domain'] ?? '-') ?></td>
-                            <td>
-                                <?php
-                                $sBadge = match($service['status']) {
-                                    'active' => 'success',
-                                    'pending' => 'warning',
-                                    'suspended' => 'danger',
-                                    default => 'gray'
-                                };
-                                ?>
-                                <span class="badge badge-<?= $sBadge ?>"><?= ucfirst($service['status']) ?></span>
-                            </td>
-                            <td><?= $service['next_due_date'] ? date('d.m.Y', strtotime($service['next_due_date'])) : '-' ?></td>
-                            <td>
-                                <a href="service-view.php?id=<?= $service['id'] ?>" class="btn btn-sm btn-outline">Görüntüle</a>
-                            </td>
-                        </tr>
+                        <?php foreach ($hizmetler as $h):
+                            [$dAd, $dSinif] = $hizmetDurum[$h['status']] ?? [(string) $h['status'], 'badge'];
+                            ?>
+                            <tr>
+                                <td>
+                                    <b><a href="service-view.php?id=<?= (int) $h['id'] ?>">
+                                        <?= htmlspecialchars((string) ($h['urun'] ?: 'Ürün silinmiş')) ?></a></b>
+                                    <span><?= htmlspecialchars((string) ($h['domain'] ?: '—')) ?></span>
+                                </td>
+                                <td class="sv-sag">
+                                    <b><?= svPara((float) $h['amount'], $paraBirimi) ?></b>
+                                    <span><?= !empty($h['next_due_date'])
+                                        ? date('d.m.Y', strtotime((string) $h['next_due_date'])) . ' vade'
+                                        : 'Tek seferlik' ?></span>
+                                </td>
+                                <td class="sv-sag"><span class="badge <?= $dSinif ?>"><?= $dAd ?></span></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($faturalar): ?>
+            <div class="sv-panel">
+                <div class="sv-panel-bas"><h3>Faturalar</h3></div>
+                <table class="sv-tablo">
+                    <tbody>
+                        <?php foreach ($faturalar as $f):
+                            [$dAd, $dSinif] = $faturaDurum[$f['status']] ?? [(string) $f['status'], 'badge'];
+                            ?>
+                            <tr>
+                                <td>
+                                    <b><a href="invoice-view.php?id=<?= (int) $f['id'] ?>">
+                                        <?= htmlspecialchars((string) $f['invoice_number']) ?></a></b>
+                                    <span><?= date('d.m.Y', strtotime((string) $f['created_at'])) ?></span>
+                                </td>
+                                <td class="sv-sag"><b><?= svPara((float) $f['total'], (string) ($f['currency'] ?: $paraBirimi)) ?></b></td>
+                                <td class="sv-sag"><span class="badge <?= $dSinif ?>"><?= $dAd ?></span></td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
-        </div>
+        <?php endif; ?>
+
+        <?php if ($gunluk): ?>
+            <div class="sv-panel">
+                <div class="sv-panel-bas"><h3>Hareket geçmişi</h3></div>
+                <div class="sv-gunluk">
+                    <?php foreach ($gunluk as $g): ?>
+                        <div class="sv-gunluk-oge">
+                            <?= htmlspecialchars((string) ($g['description'] ?? $g['action'] ?? '')) ?>
+                            <time><?= date('d.m.Y H:i', strtotime((string) $g['created_at'])) ?></time>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
         <?php endif; ?>
     </div>
-    
+
     <div>
-        <!-- Sipariş Özeti -->
-        <div class="card">
-            <div class="card-header">
-                <h3>📋 Sipariş Özeti</h3>
-            </div>
-            <div class="card-body">
-                <div style="margin-bottom: 15px;">
-                    <small style="color: var(--gray);">Sipariş Tarihi</small>
-                    <p><strong><?= date('d.m.Y H:i', strtotime($order['created_at'])) ?></strong></p>
-                </div>
-                
-                <hr style="border: none; border-top: 1px solid var(--border); margin: 15px 0;">
-                
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                    <span style="color: var(--gray);">Ara Toplam</span>
-                    <span><?= number_format((float)$order['subtotal'], 2) ?> <?= $order['currency'] ?></span>
-                </div>
-                
-                <?php if ($order['discount'] > 0): ?>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                    <span style="color: var(--gray);">İndirim</span>
-                    <span style="color: var(--success);">-<?= number_format((float)$order['discount'], 2) ?> <?= $order['currency'] ?></span>
-                </div>
-                <?php endif; ?>
-                
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                    <span style="color: var(--gray);">KDV</span>
-                    <span><?= number_format((float)$order['tax'], 2) ?> <?= $order['currency'] ?></span>
-                </div>
-                
-                <hr style="border: none; border-top: 1px solid var(--border); margin: 15px 0;">
-                
-                <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 700;">
-                    <span>Toplam</span>
-                    <span style="color: var(--primary);"><?= number_format((float)$order['total'], 2) ?> <?= $order['currency'] ?></span>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Müşteri Bilgileri -->
-        <div class="card">
-            <div class="card-header">
-                <h3>👤 Müşteri</h3>
-            </div>
-            <div class="card-body">
-                <p><strong><?= htmlspecialchars($order['first_name'] . ' ' . $order['last_name']) ?></strong></p>
-                <?php if ($order['company_name']): ?>
-                    <p style="color: var(--gray);"><?= htmlspecialchars($order['company_name']) ?></p>
-                <?php endif; ?>
-                <p style="margin-top: 10px;">
-                    <a href="mailto:<?= htmlspecialchars($order['email']) ?>"><?= htmlspecialchars($order['email']) ?></a>
-                </p>
-                <?php if ($order['phone']): ?>
-                    <p><?= htmlspecialchars($order['phone']) ?></p>
-                <?php endif; ?>
-                <hr style="border: none; border-top: 1px solid var(--border); margin: 15px 0;">
-                <a href="clients.php?id=<?= $order['client_id'] ?>" class="btn btn-sm btn-outline" style="width: 100%;">Müşteri Profiline Git</a>
-            </div>
-        </div>
-        
-        <!-- Durum Güncelle -->
-        <div class="card">
-            <div class="card-header">
-                <h3>⚙️ Durum Güncelle</h3>
-            </div>
-            <div class="card-body">
+        <div class="sv-panel">
+            <div class="sv-panel-bas"><h3>İşlemler</h3></div>
+            <div class="sv-panel-govde sv-islem">
                 <form method="POST">
-                    <div class="form-group">
-                        <select name="status" class="form-control">
-                            <option value="pending" <?= $order['status'] === 'pending' ? 'selected' : '' ?>>Beklemede</option>
-                            <option value="processing" <?= $order['status'] === 'processing' ? 'selected' : '' ?>>İşleniyor</option>
-                            <option value="active" <?= $order['status'] === 'active' ? 'selected' : '' ?>>Aktif</option>
-                            <option value="fraud" <?= $order['status'] === 'fraud' ? 'selected' : '' ?>>Fraud</option>
-                            <option value="cancelled" <?= $order['status'] === 'cancelled' ? 'selected' : '' ?>>İptal</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="width: 100%;">Güncelle</button>
+                    <label for="durum">Sipariş durumu</label>
+                    <select name="durum" id="durum" class="form-control" style="margin-bottom:9px">
+                        <?php foreach (Siparis::DURUMLAR as $deger => $ad): ?>
+                            <option value="<?= $deger ?>" <?= $siparis['status'] === $deger ? 'selected' : '' ?>>
+                                <?= $ad ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-rotate"></i> Durumu güncelle
+                    </button>
                 </form>
+
+                <?php if ($eksikHizmet): ?>
+                    <form method="POST">
+                        <input type="hidden" name="hizmet_olustur" value="1">
+                        <button type="submit" class="btn btn-outline">
+                            <i class="fas fa-plus"></i> Eksik hizmetleri aç
+                        </button>
+                    </form>
+                <?php endif; ?>
+
+                <a href="invoice-create.php?client_id=<?= (int) $siparis['client_id'] ?>" class="btn btn-outline">
+                    <i class="fas fa-file-invoice"></i> Fatura oluştur
+                </a>
             </div>
         </div>
-        
-        <!-- IP Bilgisi -->
-        <?php if ($order['ip_address']): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>🌐 Sipariş Bilgisi</h3>
-            </div>
-            <div class="card-body">
-                <small style="color: var(--gray);">IP Adresi</small>
-                <p><strong><?= htmlspecialchars($order['ip_address']) ?></strong></p>
+
+        <div class="sv-panel">
+            <div class="sv-panel-bas"><h3>Müşteri</h3></div>
+            <div class="sv-panel-govde">
+                <div class="sv-bilgi-satir">
+                    <span>Ad soyad</span>
+                    <span><?= htmlspecialchars($adSoyad !== '' ? $adSoyad : 'Müşteri silinmiş') ?></span>
+                </div>
+                <?php if (!empty($siparis['company_name'])): ?>
+                    <div class="sv-bilgi-satir">
+                        <span>Şirket</span>
+                        <span><?= htmlspecialchars((string) $siparis['company_name']) ?></span>
+                    </div>
+                <?php endif; ?>
+                <div class="sv-bilgi-satir">
+                    <span>E-posta</span>
+                    <span><a href="mailto:<?= htmlspecialchars((string) $siparis['email']) ?>" dir="ltr"
+                            style="color:var(--y-primary)"><?= htmlspecialchars((string) $siparis['email']) ?></a></span>
+                </div>
+                <?php if (!empty($siparis['phone'])): ?>
+                    <div class="sv-bilgi-satir">
+                        <span>Telefon</span>
+                        <span dir="ltr"><?= htmlspecialchars((string) $siparis['phone']) ?></span>
+                    </div>
+                <?php endif; ?>
+                <?php if (!empty($siparis['client_id'])): ?>
+                    <a href="client-view.php?id=<?= (int) $siparis['client_id'] ?>"
+                        class="btn btn-sm btn-outline" style="width:100%;justify-content:center;margin-top:12px">
+                        Müşteri kartı
+                    </a>
+                <?php endif; ?>
             </div>
         </div>
+
+        <div class="sv-panel">
+            <div class="sv-panel-bas"><h3>Sipariş bilgisi</h3></div>
+            <div class="sv-panel-govde">
+                <div class="sv-bilgi-satir">
+                    <span>Ödeme yöntemi</span>
+                    <span><?= htmlspecialchars((string) ($siparis['payment_method'] ?: '—')) ?></span>
+                </div>
+                <?php if (!empty($siparis['promo_code'])): ?>
+                    <div class="sv-bilgi-satir">
+                        <span>Promosyon</span>
+                        <span><?= htmlspecialchars((string) $siparis['promo_code']) ?></span>
+                    </div>
+                <?php endif; ?>
+                <div class="sv-bilgi-satir">
+                    <span>IP adresi</span>
+                    <span dir="ltr"><?= htmlspecialchars((string) ($siparis['ip_address'] ?: '—')) ?></span>
+                </div>
+                <div class="sv-bilgi-satir">
+                    <span>Son güncelleme</span>
+                    <span><?= date('d.m.Y H:i', strtotime((string) $siparis['updated_at'])) ?></span>
+                </div>
+            </div>
+        </div>
+
+        <?php if (!empty($siparis['notes']) || !empty($siparis['admin_notes'])): ?>
+            <div class="sv-panel">
+                <div class="sv-panel-bas"><h3>Notlar</h3></div>
+                <div class="sv-panel-govde" style="font-size:13px;line-height:1.65;color:var(--y-metin-2)">
+                    <?php if (!empty($siparis['notes'])): ?>
+                        <p><?= nl2br(htmlspecialchars((string) $siparis['notes'])) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($siparis['admin_notes'])): ?>
+                        <p style="margin-top:10px;color:var(--y-metin-3)">
+                            <?= nl2br(htmlspecialchars((string) $siparis['admin_notes'])) ?>
+                        </p>
+                    <?php endif; ?>
+                </div>
+            </div>
         <?php endif; ?>
     </div>
 </div>
 
-<?php include 'includes/footer.php'; ?>
-
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
