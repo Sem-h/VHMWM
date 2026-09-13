@@ -1,11 +1,23 @@
 <?php
 /**
- * WHMVM - Ürün Grupları Yönetimi
+ * VHM - Ürün grupları
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - Her sayfa açılışında ALTER TABLE çalıştırıyordu. Şema değişikliği
+ *     istek başına yapılacak iş değil; sütun zaten kurulum şemasında var.
+ *   - Kısa ad Türkçe harfleri siliyordu; çakışma olunca sonuna time()
+ *     ekleniyordu ("hosting-1757800000" gibi adresler oluşuyordu).
+ *   - Güncellemede ad hiç doğrulanmıyor, kısa adın benzersizliğine
+ *     bakılmıyordu; aynı slug girilince yakalanmamış SQL hatası dönüyordu.
+ *   - PRG yoktu; yenilemede aynı grup tekrar ekleniyordu.
  */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+require_once dirname(__DIR__) . '/includes/Katalog.php';
 Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
@@ -13,904 +25,567 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
-$pageTitle = 'Ürün Grupları';
-$currentPage = 'product-groups';
-$db = Database::getInstance();
-$message = '';
-$messageType = 'success';
+function grupDon(string $tip, string $metin): never
+{
+    $_SESSION['gr_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: product-groups.php');
+    exit;
+}
 
-// Silme işlemi
-/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Guvenlik::zorunlu();
-    // Önce bu gruba ait ürün var mı kontrol et
-    $productCount = Database::fetchColumn("SELECT COUNT(*) FROM products WHERE group_id = ?", [$_POST['delete']]);
-    if ($productCount > 0) {
-        $message = "Bu gruba ait $productCount ürün var. Önce ürünleri başka bir gruba taşıyın veya silin.";
-        $messageType = 'danger';
-    } else {
-        Database::query("DELETE FROM product_groups WHERE id = ?", [$_POST['delete']]);
-        $message = 'Grup silindi.';
-    }
-}
 
-// type alanını ekle (yoksa)
-try {
-    $db->exec("ALTER TABLE product_groups ADD COLUMN IF NOT EXISTS `type` VARCHAR(50) DEFAULT 'hosting'");
-} catch (Exception $e) {
-    // Kolon zaten varsa devam et
-}
+    /* ---------- Silme ---------- */
+    if (isset($_POST['sil'])) {
+        $grupId = (int) $_POST['sil'];
+        $grup = Database::fetch("SELECT name FROM product_groups WHERE id = ?", [$grupId]);
 
-// Ekleme işlemi
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if ($_POST['action'] === 'add') {
-        $name = trim($_POST['name'] ?? '');
-        $slug = trim($_POST['slug'] ?? '');
-        $type = trim($_POST['type'] ?? 'hosting');
-        $description = trim($_POST['description'] ?? '');
-        $orderPriority = (int) ($_POST['order_priority'] ?? 0);
-        $isHidden = isset($_POST['is_hidden']) ? 1 : 0;
+        if (!$grup) {
+            grupDon('error', 'Grup bulunamadı.');
+        }
 
-        if (empty($name)) {
-            $message = 'Grup adı zorunludur!';
-            $messageType = 'danger';
-        } else {
-            // Slug oluştur
-            if (empty($slug)) {
-                $slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $name));
-            }
-
-            // Slug benzersiz mi kontrol et
-            $exists = Database::fetchColumn("SELECT id FROM product_groups WHERE slug = ?", [$slug]);
-            if ($exists) {
-                $slug .= '-' . time();
-            }
-
-            Database::query(
-                "INSERT INTO product_groups (name, slug, type, description, order_priority, is_hidden) VALUES (?, ?, ?, ?, ?, ?)",
-                [$name, $slug, $type, $description, $orderPriority, $isHidden]
+        $urunSayisi = Katalog::gruptakiUrun($grupId);
+        if ($urunSayisi > 0) {
+            grupDon(
+                'error',
+                $grup['name'] . ' silinemez: gruba bağlı ' . $urunSayisi
+                . ' ürün var. Önce ürünleri başka gruba taşıyın.'
             );
-            $message = 'Grup eklendi!';
+        }
+
+        Database::query("DELETE FROM product_groups WHERE id = ?", [$grupId]);
+        grupDon('success', $grup['name'] . ' silindi.');
+    }
+
+    /* ---------- Görünürlük ---------- */
+    if (isset($_POST['gizle_degistir'])) {
+        $grupId = (int) $_POST['gizle_degistir'];
+        $grup = Database::fetch("SELECT name, is_hidden FROM product_groups WHERE id = ?", [$grupId]);
+
+        if (!$grup) {
+            grupDon('error', 'Grup bulunamadı.');
+        }
+
+        $yeni = (int) $grup['is_hidden'] === 1 ? 0 : 1;
+        Database::query("UPDATE product_groups SET is_hidden = ? WHERE id = ?", [$yeni, $grupId]);
+
+        grupDon('success', $grup['name'] . ($yeni === 1 ? ' gizlendi.' : ' mağazada görünür yapıldı.'));
+    }
+
+    /* ---------- Ekleme / güncelleme ---------- */
+    if (isset($_POST['kaydet'])) {
+        $grupId = (int) ($_POST['id'] ?? 0);
+        $ad = trim((string) ($_POST['name'] ?? ''));
+        $tip = (string) ($_POST['type'] ?? 'hosting');
+        $aciklama = trim((string) ($_POST['description'] ?? ''));
+        $sira = (int) ($_POST['order_priority'] ?? 0);
+        $gizli = isset($_POST['is_hidden']) ? 1 : 0;
+        $elleSlug = trim((string) ($_POST['slug'] ?? ''));
+
+        if ($ad === '') {
+            grupDon('error', 'Grup adı boş olamaz.');
+        }
+        if (mb_strlen($ad) > 255) {
+            grupDon('error', 'Grup adı çok uzun (en fazla 255 karakter).');
+        }
+        if (!isset(Katalog::URUN_TIPLERI[$tip])) {
+            grupDon('error', 'Geçersiz ürün türü.');
+        }
+        if ($sira < 0 || $sira > 9999) {
+            grupDon('error', 'Sıra 0 ile 9999 arasında olmalı.');
+        }
+
+        /* Elle girilen kısa ad da temizlenir; çakışırsa -2 eklenir */
+        $slug = Katalog::benzersizSlug(
+            $elleSlug !== '' ? $elleSlug : $ad,
+            'product_groups',
+            $grupId > 0 ? $grupId : null
+        );
+
+        $veri = [
+            'name' => $ad,
+            'slug' => $slug,
+            'type' => $tip,
+            'description' => $aciklama,
+            'order_priority' => $sira,
+            'is_hidden' => $gizli,
+        ];
+
+        try {
+            if ($grupId > 0) {
+                if (!Database::fetch("SELECT id FROM product_groups WHERE id = ?", [$grupId])) {
+                    grupDon('error', 'Güncellenecek grup bulunamadı.');
+                }
+                Database::update('product_groups', $veri, 'id = ?', [$grupId]);
+                grupDon('success', $ad . ' güncellendi.');
+            }
+
+            Database::insert('product_groups', $veri);
+            grupDon('success', $ad . ' eklendi.');
+        } catch (Throwable $e) {
+            error_log('Ürün grubu kaydedilemedi: ' . $e->getMessage());
+            grupDon('error', 'Grup kaydedilemedi.');
         }
     }
 
-    if ($_POST['action'] === 'update') {
-        $id = (int) $_POST['id'];
-        $name = trim($_POST['name'] ?? '');
-        $slug = trim($_POST['slug'] ?? '');
-        $type = trim($_POST['type'] ?? 'hosting');
-        $description = trim($_POST['description'] ?? '');
-        $orderPriority = (int) ($_POST['order_priority'] ?? 0);
-        $isHidden = isset($_POST['is_hidden']) ? 1 : 0;
-
-        Database::query(
-            "UPDATE product_groups SET name = ?, slug = ?, type = ?, description = ?, order_priority = ?, is_hidden = ? WHERE id = ?",
-            [$name, $slug, $type, $description, $orderPriority, $isHidden, $id]
-        );
-        $message = 'Grup güncellendi!';
-    }
+    grupDon('error', 'Tanımsız işlem.');
 }
 
-// Grupları çek (ürün sayısıyla birlikte)
-$groups = Database::fetchAll("
-    SELECT g.*, COUNT(p.id) as product_count 
-    FROM product_groups g 
-    LEFT JOIN products p ON g.id = p.group_id 
-    GROUP BY g.id 
-    ORDER BY g.order_priority, g.name
-");
+$mesaj = null;
+if (!empty($_SESSION['gr_mesaj'])) {
+    $mesaj = $_SESSION['gr_mesaj'];
+    unset($_SESSION['gr_mesaj']);
+}
 
-include 'includes/header.php';
+$duzenlenen = null;
+if (!empty($_GET['duzenle'])) {
+    $duzenlenen = Database::fetch(
+        "SELECT * FROM product_groups WHERE id = ?",
+        [(int) $_GET['duzenle']]
+    );
+}
+
+$gruplar = Database::fetchAll(
+    "SELECT g.*,
+            COUNT(p.id) AS urun_sayisi,
+            SUM(CASE WHEN p.is_active = 1 THEN 1 ELSE 0 END) AS etkin_sayisi
+       FROM product_groups g
+       LEFT JOIN products p ON p.group_id = g.id
+      GROUP BY g.id
+      ORDER BY g.order_priority, g.name"
+);
+
+$grupsuzUrun = (int) Database::fetchColumn("SELECT COUNT(*) FROM products WHERE group_id IS NULL");
+
+$tipIkon = [
+    'hosting' => 'fa-globe', 'vps' => 'fa-server', 'vds' => 'fa-hard-drive',
+    'dedicated' => 'fa-database', 'domain' => 'fa-at', 'ssl' => 'fa-lock',
+    'other' => 'fa-cube',
+];
+
+$pageTitle = 'Ürün grupları';
+$currentPage = 'product-groups';
+require_once __DIR__ . '/includes/header.php';
 ?>
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-    /* Stats Grid */
-    .stats-grid {
+    /* ==========================================
+       Ürün grupları - gr
+       ========================================== */
+    .gr-duzen {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 20px;
-        margin-bottom: 30px;
+        grid-template-columns: minmax(0, 1fr) 310px;
+        gap: 18px;
+        align-items: start;
     }
 
-    .stat-card {
-        background: linear-gradient(135deg, var(--y-yuzey) 0%, var(--y-yuzey-2) 100%);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 24px;
-        display: flex;
-        align-items: center;
-        gap: 20px;
-        transition: all 0.3s;
-    }
-
-    .stat-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
-    }
-
-    .stat-icon {
-        width: 56px;
-        height: 56px;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        color: white;
-    }
-
-    .stat-icon.blue {
-        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-    }
-
-    .stat-icon.green {
-        background: linear-gradient(135deg, #22c55e, #16a34a);
-    }
-
-    .stat-icon.orange {
-        background: linear-gradient(135deg, #f97316, #ea580c);
-    }
-
-    .stat-icon.purple {
-        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-    }
-
-    .stat-info h4 {
-        font-size: 28px;
-        font-weight: 700;
-        color: var(--dark);
-        margin-bottom: 4px;
-    }
-
-    .stat-info span {
-        font-size: 13px;
-        color: var(--gray);
-    }
-
-    /* Type Section */
-    .type-section {
+    .gr-liste {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
         background: var(--y-yuzey);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        margin-bottom: 24px;
+        box-shadow: var(--y-golge);
         overflow: hidden;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     }
 
-    .type-header {
+    .gr-bas {
         display: flex;
         align-items: center;
-        gap: 16px;
-        padding: 20px 24px;
-        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
-        border-bottom: 1px solid var(--border);
-        position: relative;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
     }
 
-    .type-header::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        background: var(--type-color);
-    }
-
-    .type-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 20px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-
-    .type-info {
-        flex: 1;
-    }
-
-    .type-info h3 {
-        font-size: 17px;
+    .gr-bas h3 {
+        font-size: 12.5px;
         font-weight: 700;
-        color: var(--dark);
-        margin-bottom: 4px;
     }
 
-    .type-info span {
-        font-size: 13px;
-        color: var(--gray);
+    .gr-bas span {
+        font-size: 12px;
+        color: var(--y-metin-3);
     }
 
-    .type-add-btn {
-        padding: 10px 20px;
-        background: var(--primary);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
+    .gr-satir {
         display: flex;
         align-items: center;
-        gap: 8px;
-        transition: all 0.2s;
-    }
-
-    .type-add-btn:hover {
-        background: #4f46e5;
-        transform: scale(1.02);
-    }
-
-    .type-groups {
-        padding: 0;
-    }
-
-    /* Group Row */
-    .group-row {
-        display: flex;
-        align-items: center;
-        padding: 18px 24px;
+        gap: 14px;
+        padding: 13px 16px;
         border-bottom: 1px solid var(--y-cizgi-soft);
-        transition: all 0.2s;
     }
 
-    .group-row:last-child {
+    .gr-satir:last-child {
         border-bottom: none;
     }
 
-    .group-row:hover {
-        background: linear-gradient(90deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
+    .gr-satir:hover {
+        background: var(--y-yuzey-2);
     }
 
-    .group-main {
+    .gr-satir.secili {
+        background: var(--y-primary-soft);
+    }
+
+    .gr-satir.gizli {
+        opacity: .62;
+    }
+
+    .gr-sira {
+        width: 26px;
+        flex-shrink: 0;
+        font-size: 11.5px;
+        font-weight: 700;
+        color: var(--y-metin-3);
+        text-align: center;
+    }
+
+    .gr-ikon {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 13px;
+    }
+
+    .gr-orta {
         flex: 1;
-        display: flex;
-        align-items: center;
-        gap: 16px;
+        min-width: 0;
     }
 
-    .group-avatar {
-        width: 42px;
-        height: 42px;
-        border-radius: 10px;
+    .gr-orta b {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .gr-alt {
         display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 18px;
-        color: white;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+    }
+
+    .gr-etiket {
+        padding: 2px 8px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 999px;
+        font-size: 11px;
+        color: var(--y-metin-3);
+    }
+
+    .gr-etiket.kod {
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+
+    .gr-sayi {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .gr-sayi b {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--y-metin);
+    }
+
+    .gr-sayi span {
+        display: block;
+        margin-top: 1px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .gr-eylem {
+        display: flex;
+        gap: 6px;
         flex-shrink: 0;
     }
 
-    .group-details {
-        flex: 1;
+    .gr-eylem form {
+        margin: 0;
     }
 
-    .group-name {
+    .gr-dugme {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 7px;
+        background: var(--y-yuzey);
+        color: var(--y-metin-3);
+        font-size: 12px;
+        cursor: pointer;
+        transition: .15s;
+    }
+
+    .gr-dugme:hover {
+        border-color: var(--y-primary);
+        color: var(--y-primary);
+    }
+
+    .gr-dugme.tehlike:hover {
+        border-color: var(--y-danger);
+        color: var(--y-danger);
+    }
+
+    .gr-form {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+        position: sticky;
+        top: 78px;
+    }
+
+    .gr-form-govde {
+        padding: 16px;
+    }
+
+    .gr-alan {
+        margin-bottom: 12px;
+    }
+
+    .gr-alan label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .gr-alan small {
+        display: block;
+        margin-top: 4px;
+        font-size: 11px;
+        color: var(--y-metin-3);
+    }
+
+    .gr-onay {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12.5px;
+        color: var(--y-metin-2);
+        cursor: pointer;
+    }
+
+    .gr-form-alt {
+        display: flex;
+        gap: 8px;
+        padding: 12px 16px;
+        border-top: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .gr-form-alt .btn {
+        flex: 1;
+        justify-content: center;
+    }
+
+    .gr-bos {
+        padding: 40px 16px;
+        text-align: center;
+        color: var(--y-metin-3);
+    }
+
+    .gr-bos i {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 26px;
+        opacity: .4;
+    }
+
+    .gr-uyari {
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-bottom: 6px;
-    }
-
-    .group-name strong {
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--dark);
-    }
-
-    .group-meta {
-        display: flex;
-        align-items: center;
-        gap: 20px;
-    }
-
-    .meta-item {
-        font-size: 13px;
-        color: var(--gray);
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-
-    .meta-item i {
-        font-size: 11px;
-        opacity: 0.7;
-    }
-
-    .meta-item code {
-        background: var(--y-cizgi);
-        padding: 3px 10px;
-        border-radius: 6px;
-        font-size: 12px;
+        padding: 11px 16px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: color-mix(in srgb, var(--y-warning) 12%, var(--y-yuzey));
+        font-size: 12.5px;
         color: var(--y-metin-2);
     }
 
-    .group-stats {
-        display: flex;
-        align-items: center;
-        gap: 24px;
-        margin-right: 24px;
-    }
-
-    .group-stat-item {
-        text-align: center;
-    }
-
-    .group-stat-item .value {
-        font-size: 18px;
-        font-weight: 700;
-        color: var(--dark);
-    }
-
-    .group-stat-item .label {
-        font-size: 11px;
-        color: var(--gray);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .group-link {
-        margin-right: 16px;
-    }
-
-    .group-link a {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
-        background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-        border-radius: 10px;
-        color: #3b82f6;
-        text-decoration: none;
-        transition: all 0.2s;
-        font-size: 14px;
-    }
-
-    .group-link a:hover {
-        background: linear-gradient(135deg, #3b82f6, #2563eb);
-        color: white;
-        transform: scale(1.05);
-    }
-
-    .group-actions-row {
-        display: flex;
-        gap: 8px;
-    }
-
-    .btn-icon {
-        width: 40px;
-        height: 40px;
-        border: 1px solid var(--y-cizgi);
-        background: var(--y-yuzey);
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--y-metin-3);
-        cursor: pointer;
-        transition: all 0.2s;
-        font-size: 14px;
-    }
-
-    .btn-icon:hover {
-        border-color: var(--primary);
-        color: var(--primary);
-        background: #f0f0ff;
-        transform: scale(1.05);
-    }
-
-    .btn-icon-danger:hover {
-        border-color: #ef4444;
-        color: #ef4444;
-        background: #fef2f2;
-    }
-
-    .badge-hidden {
-        background: linear-gradient(135deg, #fef3c7, #fde68a);
-        color: #92400e;
-        font-size: 10px;
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .badge-count {
-        background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-        color: #1e40af;
-        font-size: 12px;
-        padding: 4px 12px;
-        border-radius: 20px;
+    .gr-uyari a {
+        color: var(--y-primary);
         font-weight: 600;
     }
 
-    /* Empty State */
-    .empty-state {
-        text-align: center;
-        padding: 80px 20px;
-        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
-        border: 2px dashed #cbd5e1;
-        border-radius: 16px;
-    }
-
-    .empty-state i {
-        font-size: 56px;
-        color: #cbd5e1;
-        margin-bottom: 20px;
-    }
-
-    .empty-state h3 {
-        font-size: 20px;
-        color: var(--dark);
-        margin-bottom: 10px;
-    }
-
-    .empty-state p {
-        font-size: 15px;
-        color: var(--gray);
-        margin-bottom: 24px;
-    }
-
-    /* Modal Overrides */
-    .modal.show {
-        display: flex;
-    }
-
-    .modal-content {
-        background: var(--y-yuzey);
-        max-width: 520px;
-        border-radius: 16px;
-    }
-
-    .modal-header {
-        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
-        border-radius: 16px 16px 0 0;
-    }
-
-    .modal-header h3 {
-        color: var(--dark);
-    }
-
-    .form-group label {
-        color: var(--dark);
-        font-weight: 500;
-    }
-
-    /* Responsive */
-    @media (max-width: 1200px) {
-        .stats-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-
-    @media (max-width: 768px) {
-        .stats-grid {
-            grid-template-columns: 1fr;
+    @media (max-width: 980px) {
+        .gr-duzen {
+            grid-template-columns: minmax(0, 1fr);
         }
 
-        .group-stats {
-            display: none;
-        }
-
-        .group-row {
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-
-        .group-actions-row {
-            width: 100%;
-            justify-content: flex-end;
+        .gr-form {
+            position: static;
         }
     }
 </style>
 
-<?php if ($message): ?>
-    <div class="alert alert-<?= $messageType ?>">
-        <i class="fas fa-<?= $messageType === 'success' ? 'check-circle' : 'exclamation-circle' ?>"></i>
-        <?= htmlspecialchars($message) ?>
+<div class="page-header">
+    <div>
+        <h1>Ürün grupları</h1>
+        <p>Mağazada ürünlerin hangi başlık altında görüneceği</p>
+    </div>
+</div>
+
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= htmlspecialchars($mesaj['tip']) ?>">
+        <?= htmlspecialchars($mesaj['metin']) ?>
     </div>
 <?php endif; ?>
 
-<?php
-// İstatistikleri hesapla
-$totalGroups = count($groups);
-$totalProducts = array_sum(array_column($groups, 'product_count'));
-$activeTypes = count(array_unique(array_column($groups, 'type')));
-$hiddenGroups = count(array_filter($groups, fn($g) => $g['is_hidden']));
-?>
+<div class="gr-duzen">
+    <div class="gr-liste">
+        <div class="gr-bas">
+            <h3>Gruplar</h3>
+            <span><?= count($gruplar) ?> grup</span>
+        </div>
 
-<!-- İstatistik Kartları -->
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-icon blue">
-            <i class="fas fa-layer-group"></i>
-        </div>
-        <div class="stat-info">
-            <h4><?= $totalGroups ?></h4>
-            <span>Toplam Grup</span>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon green">
-            <i class="fas fa-box"></i>
-        </div>
-        <div class="stat-info">
-            <h4><?= $totalProducts ?></h4>
-            <span>Toplam Ürün</span>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon orange">
-            <i class="fas fa-tags"></i>
-        </div>
-        <div class="stat-info">
-            <h4><?= $activeTypes ?></h4>
-            <span>Aktif Kategori</span>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon purple">
-            <i class="fas fa-eye-slash"></i>
-        </div>
-        <div class="stat-info">
-            <h4><?= $hiddenGroups ?></h4>
-            <span>Gizli Grup</span>
-        </div>
-    </div>
-</div>
-
-<div class="card" style="margin-bottom: 25px;">
-    <div class="card-header">
-        <h3><i class="fas fa-layer-group"></i> Ürün Grupları</h3>
-        <button onclick="openModal('addModal')" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Yeni Grup
-        </button>
-    </div>
-</div>
-
-<?php
-// Grupları türlerine göre ayır - Veritabanından dinamik olarak çek
-$typeLabels = [];
-$typeOrder = [];
-try {
-    $dbTypes = Database::fetchAll("SELECT * FROM product_types WHERE is_active = 1 ORDER BY order_priority, label");
-    foreach ($dbTypes as $t) {
-        $typeLabels[$t['slug']] = [
-            'label' => $t['emoji'] . ' ' . $t['label'],
-            'icon' => $t['icon'],
-            'color' => $t['color']
-        ];
-        $typeOrder[] = $t['slug'];
-    }
-} catch (Exception $e) {
-    // Tablo yoksa varsayılanları kullan
-    $typeLabels = [
-        'hosting' => ['label' => '🌐 Web Hosting', 'icon' => 'fa-globe', 'color' => '#f97316'],
-        'vps' => ['label' => '💻 VPS Sunucu', 'icon' => 'fa-server', 'color' => '#10b981'],
-        'vds' => ['label' => '🖥️ VDS Sunucu', 'icon' => 'fa-database', 'color' => '#6366f1'],
-        'dedicated' => ['label' => '🏢 Fiziksel Sunucu', 'icon' => 'fa-building', 'color' => '#8b5cf6'],
-        'domain' => ['label' => '🔗 Domain', 'icon' => 'fa-link', 'color' => '#0ea5e9'],
-        'ssl' => ['label' => '🔒 SSL Sertifikası', 'icon' => 'fa-shield-alt', 'color' => '#22c55e'],
-        'email' => ['label' => '📧 E-posta', 'icon' => 'fa-envelope', 'color' => '#f59e0b'],
-        'other' => ['label' => '📦 Diğer', 'icon' => 'fa-box', 'color' => '#64748b']
-    ];
-    $typeOrder = array_keys($typeLabels);
-}
-
-$groupedByType = [];
-foreach ($groups as $group) {
-    $type = $group['type'] ?? 'other';
-    if (!isset($groupedByType[$type])) {
-        $groupedByType[$type] = [];
-    }
-    $groupedByType[$type][] = $group;
-}
-
-// $typeOrder artık yukarıda dinamik olarak oluşturuluyor
-?>
-
-<?php foreach ($typeOrder as $type): ?>
-    <?php if (isset($groupedByType[$type]) && count($groupedByType[$type]) > 0): ?>
-        <?php $typeInfo = $typeLabels[$type]; ?>
-        <div class="type-section">
-            <div class="type-header" style="--type-color: <?= $typeInfo['color'] ?>;">
-                <div class="type-icon"
-                    style="background: linear-gradient(135deg, <?= $typeInfo['color'] ?>, <?= $typeInfo['color'] ?>dd);">
-                    <i class="fas <?= $typeInfo['icon'] ?>"></i>
-                </div>
-                <div class="type-info">
-                    <h3><?= $typeInfo['label'] ?></h3>
-                    <span><?= count($groupedByType[$type]) ?> grup ·
-                        <?= array_sum(array_column($groupedByType[$type], 'product_count')) ?> ürün</span>
-                </div>
-                <button
-                    onclick="openModal('addModal'); document.querySelector('#addModal select[name=type]').value='<?= $type ?>';"
-                    class="type-add-btn">
-                    <i class="fas fa-plus"></i> Ekle
-                </button>
+        <?php if ($grupsuzUrun > 0): ?>
+            <div class="gr-uyari">
+                <i class="fas fa-triangle-exclamation"></i>
+                <span><?= $grupsuzUrun ?> ürün hiçbir gruba bağlı değil; mağazada görünmez.
+                    <a href="products.php">Ürünlere git</a></span>
             </div>
+        <?php endif; ?>
 
-            <div class="type-groups">
-                <?php foreach ($groupedByType[$type] as $group): ?>
-                    <div class="group-row">
-                        <div class="group-main">
-                            <div class="group-avatar" style="background: <?= $typeInfo['color'] ?>;">
-                                <i class="fas <?= $typeInfo['icon'] ?>"></i>
-                            </div>
-                            <div class="group-details">
-                                <div class="group-name">
-                                    <strong><?= htmlspecialchars($group['name']) ?></strong>
-                                    <?php if ($group['is_hidden']): ?>
-                                        <span class="badge-hidden">Gizli</span>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="group-meta">
-                                    <span class="meta-item">
-                                        <code><?= htmlspecialchars($group['slug']) ?></code>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="group-stats">
-                            <div class="group-stat-item">
-                                <div class="value"><?= $group['product_count'] ?></div>
-                                <div class="label">Ürün</div>
-                            </div>
-                            <div class="group-stat-item">
-                                <div class="value"><?= $group['order_priority'] ?></div>
-                                <div class="label">Sıra</div>
-                            </div>
-                        </div>
-                        <div class="group-link">
-                            <a href="<?= SITE_URL ?>/magaza.php?group=<?= htmlspecialchars($group['slug']) ?>" target="_blank"
-                                title="Sayfayı Görüntüle">
-                                <i class="fas fa-external-link-alt"></i>
-                            </a>
-                        </div>
-                        <div class="group-actions-row">
-                            <a href="products.php?group=<?= $group['id'] ?>" class="btn-icon" title="Ürünleri Gör">
-                                <i class="fas fa-eye"></i>
-                            </a>
-                            <button onclick="editGroup(<?= htmlspecialchars(json_encode($group)) ?>)" class="btn-icon"
-                                title="Düzenle">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <?php if ($group['product_count'] == 0): ?>
-                                <button
-                                    onclick="confirmDelete('Bu grubu silmek istediğinizden emin misiniz?', '?delete=<?= $group['id'] ?>')"
-                                    class="btn-icon btn-icon-danger" title="Sil">
-                                    <i class="fas fa-trash"></i>
-                                </button>
+        <?php if (!$gruplar): ?>
+            <div class="gr-bos">
+                <i class="fas fa-layer-group"></i>
+                Henüz grup yok. Sağdaki formdan ekleyin.
+            </div>
+        <?php else: ?>
+            <?php foreach ($gruplar as $g):
+                $gizli = (int) $g['is_hidden'] === 1;
+                $secili = $duzenlenen && (int) $duzenlenen['id'] === (int) $g['id'];
+                ?>
+                <div class="gr-satir <?= $gizli ? 'gizli' : '' ?> <?= $secili ? 'secili' : '' ?>">
+                    <span class="gr-sira"><?= (int) $g['order_priority'] ?></span>
+                    <span class="gr-ikon">
+                        <i class="fas <?= $tipIkon[$g['type']] ?? 'fa-cube' ?>"></i>
+                    </span>
+
+                    <div class="gr-orta">
+                        <b><?= htmlspecialchars((string) $g['name']) ?></b>
+                        <div class="gr-alt">
+                            <span class="gr-etiket"><?= Katalog::URUN_TIPLERI[$g['type']] ?? htmlspecialchars((string) $g['type']) ?></span>
+                            <span class="gr-etiket kod">/<?= htmlspecialchars((string) $g['slug']) ?></span>
+                            <?php if ($gizli): ?>
+                                <span class="gr-etiket">Gizli</span>
                             <?php endif; ?>
                         </div>
                     </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-    <?php endif; ?>
-<?php endforeach; ?>
 
-<?php if (empty($groups)): ?>
-    <div class="empty-state">
-        <i class="fas fa-folder-open"></i>
-        <h3>Henüz grup yok</h3>
-        <p>Ürünlerinizi organize etmek için ilk grubunuzu oluşturun.</p>
-        <button onclick="openModal('addModal')" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Yeni Grup Ekle
-        </button>
-    </div>
-<?php endif; ?>
+                    <div class="gr-sayi">
+                        <b><?= (int) $g['urun_sayisi'] ?></b>
+                        <span><?= (int) $g['etkin_sayisi'] ?> satışta</span>
+                    </div>
 
-<!-- Yardım -->
-<div class="card">
-    <div class="card-header">
-        <h3><i class="fas fa-info-circle"></i> Nasıl Çalışır?</h3>
+                    <div class="gr-eylem">
+                        <a href="products.php?grup=<?= (int) $g['id'] ?>" class="gr-dugme" title="Ürünlerini gör">
+                            <i class="fas fa-cubes"></i>
+                        </a>
+                        <a href="product-groups.php?duzenle=<?= (int) $g['id'] ?>" class="gr-dugme" title="Düzenle">
+                            <i class="fas fa-pen"></i>
+                        </a>
+                        <form method="POST">
+                            <input type="hidden" name="gizle_degistir" value="<?= (int) $g['id'] ?>">
+                            <button type="submit" class="gr-dugme" title="<?= $gizli ? 'Göster' : 'Gizle' ?>">
+                                <i class="fas <?= $gizli ? 'fa-eye-slash' : 'fa-eye' ?>"></i>
+                            </button>
+                        </form>
+                        <form method="POST"
+                            onsubmit="return confirm('<?= htmlspecialchars(addslashes((string) $g['name'])) ?> silinecek. Emin misiniz?')">
+                            <input type="hidden" name="sil" value="<?= (int) $g['id'] ?>">
+                            <button type="submit" class="gr-dugme tehlike" title="Sil">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
     </div>
-    <div class="card-body">
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px;">
-            <div>
-                <h4 style="color: var(--primary); margin-bottom: 10px;">
-                    <i class="fas fa-1"
-                        style="background: var(--primary); color: white; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; margin-right: 8px;"></i>
-                    Grup Oluştur
-                </h4>
-                <p style="color: var(--gray); font-size: 14px;">
-                    "Linux Hosting", "Windows Hosting", "VPS" gibi gruplar oluşturun.
-                </p>
-            </div>
-            <div>
-                <h4 style="color: var(--primary); margin-bottom: 10px;">
-                    <i class="fas fa-2"
-                        style="background: var(--primary); color: white; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; margin-right: 8px;"></i>
-                    Ürün Ekle
-                </h4>
-                <p style="color: var(--gray); font-size: 14px;">
-                    <a href="products.php">Ürünler</a> sayfasından ürün eklerken ilgili grubu seçin.
-                </p>
-            </div>
-            <div>
-                <h4 style="color: var(--primary); margin-bottom: 10px;">
-                    <i class="fas fa-3"
-                        style="background: var(--primary); color: white; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; margin-right: 8px;"></i>
-                    Sayfada Göster
-                </h4>
-                <p style="color: var(--gray); font-size: 14px;">
-                    <code>linux-hosting.php</code> gibi sayfalarda grup slug'ına göre ürünler otomatik listelenir.
-                </p>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Ekleme Modal -->
-<div id="addModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-plus-circle"></i> Yeni Grup Ekle</h3>
-            <button onclick="closeModal('addModal')" class="modal-close">
-                <i class="fas fa-times"></i>
-            </button>
+    <div class="gr-form">
+        <div class="gr-bas">
+            <h3><?= $duzenlenen ? 'Grubu düzenle' : 'Yeni grup' ?></h3>
+            <?php if ($duzenlenen): ?>
+                <a href="product-groups.php" style="font-size:12px;color:var(--y-primary)">Vazgeç</a>
+            <?php endif; ?>
         </div>
+
         <form method="POST">
-            <div class="modal-body">
-                <input type="hidden" name="action" value="add">
+            <input type="hidden" name="kaydet" value="1">
+            <?php if ($duzenlenen): ?>
+                <input type="hidden" name="id" value="<?= (int) $duzenlenen['id'] ?>">
+            <?php endif; ?>
 
-                <div class="form-group">
-                    <label>Grup Adı *</label>
-                    <input type="text" name="name" class="form-control" placeholder="Örn: Linux Hosting" required>
+            <div class="gr-form-govde">
+                <div class="gr-alan">
+                    <label for="name">Grup adı</label>
+                    <input type="text" name="name" id="name" class="form-control" required maxlength="255"
+                        value="<?= htmlspecialchars((string) ($duzenlenen['name'] ?? '')) ?>"
+                        placeholder="Paylaşımlı Hosting">
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Slug (URL için)</label>
-                        <input type="text" name="slug" class="form-control" placeholder="Örn: linux-hosting">
-                        <small style="color: var(--gray);">Boş bırakılırsa otomatik oluşturulur</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Tür *</label>
-                        <select name="type" class="form-control" required>
-                            <?php foreach ($typeLabels as $slug => $info): ?>
-                                <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                    </div>
+                <div class="gr-alan">
+                    <label for="type">Ürün türü</label>
+                    <select name="type" id="type" class="form-control">
+                        <?php foreach (Katalog::URUN_TIPLERI as $deger => $ad): ?>
+                            <option value="<?= $deger ?>"
+                                <?= ($duzenlenen['type'] ?? 'hosting') === $deger ? 'selected' : '' ?>>
+                                <?= $ad ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small>Bu gruba eklenen ürünler bu türü alır.</small>
                 </div>
 
-                <div class="form-group">
-                    <label>Açıklama</label>
-                    <textarea name="description" class="form-control" rows="2"
-                        placeholder="Grup hakkında kısa açıklama"></textarea>
+                <div class="gr-alan">
+                    <label for="slug">Kısa ad</label>
+                    <input type="text" name="slug" id="slug" class="form-control" maxlength="255"
+                        value="<?= htmlspecialchars((string) ($duzenlenen['slug'] ?? '')) ?>"
+                        placeholder="Boş bırakın, addan üretilir">
+                    <small>Mağaza adresinde görünür. Türkçe harfler çevrilir.</small>
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Sıralama</label>
-                        <input type="number" name="order_priority" class="form-control" value="0" min="0">
-                    </div>
-                    <div class="form-group" style="display: flex; align-items: center; padding-top: 30px;">
-                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                            <input type="checkbox" name="is_hidden"> Gizli (Menüde gösterme)
-                        </label>
-                    </div>
+                <div class="gr-alan">
+                    <label for="description">Açıklama</label>
+                    <input type="text" name="description" id="description" class="form-control" maxlength="500"
+                        value="<?= htmlspecialchars((string) ($duzenlenen['description'] ?? '')) ?>">
                 </div>
+
+                <div class="gr-alan">
+                    <label for="order_priority">Sıra</label>
+                    <input type="number" name="order_priority" id="order_priority" class="form-control"
+                        min="0" max="9999"
+                        value="<?= (int) ($duzenlenen['order_priority'] ?? 0) ?>">
+                    <small>Küçük sayı önce görünür.</small>
+                </div>
+
+                <label class="gr-onay">
+                    <input type="checkbox" name="is_hidden" value="1"
+                        <?= (int) ($duzenlenen['is_hidden'] ?? 0) === 1 ? 'checked' : '' ?>>
+                    Mağazada gizle
+                </label>
             </div>
-            <div class="modal-footer">
-                <button type="button" onclick="closeModal('addModal')" class="btn btn-cancel">İptal</button>
+
+            <div class="gr-form-alt">
                 <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Kaydet
+                    <?= $duzenlenen ? 'Kaydet' : 'Grup ekle' ?>
                 </button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Düzenleme Modal -->
-<div id="editModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-edit"></i> Grup Düzenle</h3>
-            <button onclick="closeModal('editModal')" class="modal-close">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <form method="POST">
-            <div class="modal-body">
-                <input type="hidden" name="action" value="update">
-                <input type="hidden" name="id" id="editId">
-
-                <div class="form-group">
-                    <label>Grup Adı *</label>
-                    <input type="text" name="name" id="editName" class="form-control" required>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Slug</label>
-                        <input type="text" name="slug" id="editSlug" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>Tür *</label>
-                        <select name="type" id="editType" class="form-control" required>
-                            <?php foreach ($typeLabels as $slug => $info): ?>
-                                <option value="<?= htmlspecialchars($slug) ?>"><?= htmlspecialchars($info['label']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Açıklama</label>
-                    <textarea name="description" id="editDescription" class="form-control" rows="2"></textarea>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Sıralama</label>
-                        <input type="number" name="order_priority" id="editOrder" class="form-control" min="0">
-                    </div>
-                    <div class="form-group" style="display: flex; align-items: center; padding-top: 30px;">
-                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                            <input type="checkbox" name="is_hidden" id="editHidden"> Gizli
-                        </label>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" onclick="closeModal('editModal')" class="btn btn-cancel">İptal</button>
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Güncelle
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<script>
-    function editGroup(group) {
-        document.getElementById('editId').value = group.id;
-        document.getElementById('editName').value = group.name;
-        document.getElementById('editSlug').value = group.slug;
-        document.getElementById('editType').value = group.type || 'hosting';
-        document.getElementById('editDescription').value = group.description || '';
-        document.getElementById('editOrder').value = group.order_priority;
-        document.getElementById('editHidden').checked = group.is_hidden == 1;
-        openModal('editModal');
-    }
-
-    // Copy link function
-    function copyLink(url) {
-        navigator.clipboard.writeText(url).then(function () {
-            // Show success feedback
-            const btn = event.target.closest('.copy-btn');
-            const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i>';
-            btn.style.background = '#16a34a';
-
-            setTimeout(function () {
-                btn.innerHTML = originalHTML;
-                btn.style.background = '';
-            }, 2000);
-        }).catch(function () {
-            alert('Kopyalanamadı: ' + url);
-        });
-    }
-
-    // Modal dışına tıklayınca kapat
-    document.querySelectorAll('.modal').forEach(modal => {
-        modal.addEventListener('click', function (e) {
-            if (e.target === this) {
-                this.classList.remove('show');
-            }
-        });
-    });
-</script>
-
-<?php include 'includes/footer.php'; ?>
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
