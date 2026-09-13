@@ -1,860 +1,865 @@
 <?php
+/**
+ * VHM - Müşteriler
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - Ekleme formunda hiçbir doğrulama yoktu. email sütunu UNIQUE
+ *     olduğu için aynı adresle ikinci kayıt denendiğinde sayfa
+ *     ölümcül hatayla çöküyordu.
+ *   - Ekleme sonrası yönlendirme yoktu; yenilemede aynı kayıt tekrar
+ *     eklenmeye çalışılıyordu.
+ *   - Silme onayı, faturaların ve ödeme kayıtlarının da silineceğini
+ *     söylemiyordu. clients tablosuna bağlı 6 tablo CASCADE ile siliniyor.
+ */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
-$pageTitle = 'Müşteriler';
-$currentPage = 'clients';
-$db = Database::getInstance();
-$message = '';
-$messageType = '';
-
-// Silme işlemi
-/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
-    Guvenlik::zorunlu();
-    $stmt = $db->prepare("DELETE FROM clients WHERE id = ?");
-    $stmt->execute([$_POST['delete']]);
-    $message = 'Müşteri silindi.';
-    $messageType = 'success';
+if (!isset($_SESSION['admin_id'])) {
+    header('Location: index.php');
+    exit;
 }
 
-// Yeni müşteri ekleme
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if ($_POST['action'] === 'add') {
-        $stmt = $db->prepare("INSERT INTO clients (email, password, first_name, last_name, company_name, phone, address, city, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([
-            $_POST['email'],
-            password_hash($_POST['password'], PASSWORD_DEFAULT),
-            $_POST['first_name'],
-            $_POST['last_name'],
-            $_POST['company_name'] ?? '',
-            $_POST['phone'] ?? '',
-            $_POST['address'] ?? '',
-            $_POST['city'] ?? '',
-            $_POST['country'] ?? 'TR'
-        ]);
-        $message = 'Müşteri başarıyla eklendi.';
-        $messageType = 'success';
+$pageTitle = 'Müşteriler';
+$currentPage = 'clients';
+
+$db = Database::getInstance();
+$hatalar = [];
+$eski = [
+    'account_type' => 'individual',
+    'first_name' => '', 'last_name' => '', 'email' => '',
+    'company_name' => '', 'tax_id' => '', 'tax_office' => '',
+    'phone' => '', 'address' => '', 'city' => '', 'country' => 'TR',
+];
+
+/* ---------- Silme ---------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+    Guvenlik::zorunlu();
+    $id = (int) $_POST['delete'];
+
+    try {
+        $ad = Database::fetchColumn(
+            "SELECT CONCAT(first_name, ' ', last_name) FROM clients WHERE id = ?",
+            [$id]
+        );
+        Database::query("DELETE FROM clients WHERE id = ?", [$id]);
+        $_SESSION['mus_mesaj'] = [
+            'tip' => 'success',
+            'metin' => ($ad ?: 'Müşteri') . ' ve bağlı tüm kayıtları silindi.',
+        ];
+    } catch (Throwable $e) {
+        error_log('Müşteri silinemedi: ' . $e->getMessage());
+        $_SESSION['mus_mesaj'] = ['tip' => 'error', 'metin' => 'Müşteri silinemedi.'];
+    }
+
+    header('Location: clients.php');
+    exit;
+}
+
+/* ---------- Durum değiştirme ---------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['durum_id'])) {
+    Guvenlik::zorunlu();
+    $id = (int) $_POST['durum_id'];
+    $yeni = ((int) ($_POST['durum'] ?? 0)) === 1 ? 1 : 0;
+
+    try {
+        Database::update('clients', ['is_active' => $yeni], 'id = ?', [$id]);
+        $_SESSION['mus_mesaj'] = [
+            'tip' => 'success',
+            'metin' => $yeni === 1 ? 'Müşteri etkinleştirildi.' : 'Müşteri pasife alındı.',
+        ];
+    } catch (Throwable $e) {
+        error_log('Müşteri durumu değiştirilemedi: ' . $e->getMessage());
+        $_SESSION['mus_mesaj'] = ['tip' => 'error', 'metin' => 'Durum değiştirilemedi.'];
+    }
+
+    header('Location: clients.php');
+    exit;
+}
+
+/* ---------- Ekleme ---------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add') {
+    Guvenlik::zorunlu();
+
+    $kirp = static fn(string $a, int $n): string => mb_substr(trim((string) ($_POST[$a] ?? '')), 0, $n);
+
+    $eski = [
+        'account_type' => ($_POST['account_type'] ?? 'individual') === 'corporate' ? 'corporate' : 'individual',
+        'first_name' => $kirp('first_name', 100),
+        'last_name' => $kirp('last_name', 100),
+        'email' => $kirp('email', 255),
+        'company_name' => $kirp('company_name', 255),
+        'tax_id' => $kirp('tax_id', 50),
+        'tax_office' => $kirp('tax_office', 100),
+        'phone' => $kirp('phone', 30),
+        'address' => $kirp('address', 500),
+        'city' => $kirp('city', 100),
+        'country' => mb_strtoupper($kirp('country', 2)) ?: 'TR',
+    ];
+    $parola = (string) ($_POST['password'] ?? '');
+
+    if (mb_strlen($eski['first_name']) < 2) {
+        $hatalar['first_name'] = 'Ad en az 2 karakter olmalı.';
+    }
+    if (mb_strlen($eski['last_name']) < 2) {
+        $hatalar['last_name'] = 'Soyad en az 2 karakter olmalı.';
+    }
+    if (!filter_var($eski['email'], FILTER_VALIDATE_EMAIL)) {
+        $hatalar['email'] = 'Geçerli bir e-posta adresi yazın.';
+    } elseif (Database::fetch("SELECT id FROM clients WHERE email = ?", [$eski['email']])) {
+        /* email sütunu UNIQUE; önceden denetlenmezse sorgu istisna fırlatıyordu */
+        $hatalar['email'] = 'Bu e-posta adresi zaten kayıtlı.';
+    }
+    if (mb_strlen($parola) < 8) {
+        $hatalar['password'] = 'Parola en az 8 karakter olmalı.';
+    }
+    if ($eski['account_type'] === 'corporate' && $eski['company_name'] === '') {
+        $hatalar['company_name'] = 'Kurumsal hesapta şirket adı zorunlu.';
+    }
+    if ($eski['phone'] !== '') {
+        $rakam = preg_replace('/\D+/', '', $eski['phone']) ?? '';
+        if (strlen($rakam) < 10 || strlen($rakam) > 13) {
+            $hatalar['phone'] = 'Telefonu 10 haneli yazın.';
+        }
+    }
+
+    if (!$hatalar) {
+        try {
+            Database::insert('clients', [
+                'account_type' => $eski['account_type'],
+                'email' => $eski['email'],
+                'password' => password_hash($parola, PASSWORD_DEFAULT),
+                'first_name' => $eski['first_name'],
+                'last_name' => $eski['last_name'],
+                'company_name' => $eski['company_name'] !== '' ? $eski['company_name'] : null,
+                'tax_id' => $eski['tax_id'] !== '' ? $eski['tax_id'] : null,
+                'tax_office' => $eski['tax_office'] !== '' ? $eski['tax_office'] : null,
+                'phone' => $eski['phone'] !== '' ? $eski['phone'] : null,
+                'address' => $eski['address'] !== '' ? $eski['address'] : null,
+                'city' => $eski['city'] !== '' ? $eski['city'] : null,
+                'country' => $eski['country'],
+                'is_active' => 1,
+            ]);
+
+            /* Yenilemede aynı kaydın tekrar eklenmemesi için yönlendir */
+            $_SESSION['mus_mesaj'] = [
+                'tip' => 'success',
+                'metin' => $eski['first_name'] . ' ' . $eski['last_name'] . ' eklendi.',
+            ];
+            header('Location: clients.php');
+            exit;
+        } catch (Throwable $e) {
+            error_log('Müşteri eklenemedi: ' . $e->getMessage());
+            $hatalar['genel'] = 'Müşteri kaydedilemedi. Lütfen tekrar deneyin.';
+        }
     }
 }
 
-// Arama
-$search = trim($_GET['search'] ?? '');
-$searchCondition = '';
-$searchParams = [];
-if ($search) {
-    $searchCondition = " WHERE (first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR company_name LIKE ? OR phone LIKE ?)";
-    $searchParams = array_fill(0, 5, "%$search%");
+$mesaj = null;
+if (!empty($_SESSION['mus_mesaj'])) {
+    $mesaj = $_SESSION['mus_mesaj'];
+    unset($_SESSION['mus_mesaj']);
 }
 
-// Sayfalama
-$page = max(1, (int) ($_GET['page'] ?? 1));
-$perPage = 20;
-$offset = ($page - 1) * $perPage;
+/* ---------- Arama, süzme, sayfalama ---------- */
+$arama = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+$suzgec = (string) ($_GET['durum'] ?? '');
 
-$totalStmt = $db->prepare("SELECT COUNT(*) FROM clients" . $searchCondition);
-$totalStmt->execute($searchParams);
-$total = (int) $totalStmt->fetchColumn();
-$totalPages = ceil($total / $perPage);
+$kosullar = [];
+$par = [];
 
-// İstatistikler
-$activeCount = (int) $db->query("SELECT COUNT(*) FROM clients WHERE is_active = 1")->fetchColumn();
-$corporateCount = (int) $db->query("SELECT COUNT(*) FROM clients WHERE company_name IS NOT NULL AND company_name != ''")->fetchColumn();
-$thisMonthCount = (int) $db->query("SELECT COUNT(*) FROM clients WHERE created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')")->fetchColumn();
+if ($arama !== '') {
+    $kosullar[] = "(first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR company_name LIKE ? OR phone LIKE ?)";
+    $desen = '%' . str_replace(['%', '_'], ['\%', '\_'], $arama) . '%';
+    $par = array_merge($par, array_fill(0, 5, $desen));
+}
+if ($suzgec === 'aktif') {
+    $kosullar[] = "is_active = 1";
+} elseif ($suzgec === 'pasif') {
+    $kosullar[] = "is_active = 0";
+} elseif ($suzgec === 'kurumsal') {
+    $kosullar[] = "account_type = 'corporate'";
+}
 
-$clientsStmt = $db->prepare("SELECT * FROM clients" . $searchCondition . " ORDER BY created_at DESC LIMIT $perPage OFFSET $offset");
-$clientsStmt->execute($searchParams);
-$clients = $clientsStmt->fetchAll();
+$nerede = $kosullar ? ' WHERE ' . implode(' AND ', $kosullar) : '';
 
-include 'includes/header.php';
+$sayfa = max(1, (int) ($_GET['page'] ?? 1));
+$adet = 20;
+$atla = ($sayfa - 1) * $adet;
+
+$toplam = (int) Database::fetchColumn("SELECT COUNT(*) FROM clients" . $nerede, $par);
+$sayfaSayisi = max(1, (int) ceil($toplam / $adet));
+
+$musteriler = Database::fetchAll(
+    "SELECT * FROM clients" . $nerede . " ORDER BY created_at DESC LIMIT {$adet} OFFSET {$atla}",
+    $par
+);
+
+/* Listedeki müşterilerin bağlı kayıt sayıları - silme uyarısı için */
+$bagliSayi = [];
+if ($musteriler) {
+    $idler = array_map(static fn(array $m): int => (int) $m['id'], $musteriler);
+    $yer = implode(',', array_fill(0, count($idler), '?'));
+
+    foreach (['invoices' => 'fatura', 'services' => 'hizmet', 'orders' => 'sipariş', 'transactions' => 'ödeme kaydı'] as $tablo => $ad) {
+        try {
+            foreach (Database::fetchAll(
+                "SELECT client_id, COUNT(*) AS adet FROM `{$tablo}` WHERE client_id IN ({$yer}) GROUP BY client_id",
+                $idler
+            ) as $r) {
+                if ((int) $r['adet'] > 0) {
+                    $bagliSayi[(int) $r['client_id']][] = (int) $r['adet'] . ' ' . $ad;
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('Bağlı kayıt sayılamadı (' . $tablo . '): ' . $e->getMessage());
+        }
+    }
+}
+
+/* ---------- Özet ---------- */
+$sayi = static function (string $sql): int {
+    try {
+        return (int) Database::fetchColumn($sql);
+    } catch (Throwable $e) {
+        return 0;
+    }
+};
+$ozet = [
+    ['Toplam müşteri', $sayi("SELECT COUNT(*) FROM clients"), 'fa-users', ''],
+    ['Etkin', $sayi("SELECT COUNT(*) FROM clients WHERE is_active = 1"), 'fa-circle-check', 'aktif'],
+    ['Kurumsal', $sayi("SELECT COUNT(*) FROM clients WHERE account_type = 'corporate'"), 'fa-building', 'kurumsal'],
+    ['Bu ay eklenen', $sayi("SELECT COUNT(*) FROM clients WHERE created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')"), 'fa-user-plus', ''],
+];
+
+$formAcik = $hatalar !== [];
+
+require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    /* Premium Clients Page Styles */
-    .clients-page {
-        animation: fadeIn 0.3s ease-out;
-    }
-
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    /* Stats Cards */
-    .stats-grid {
+    /* ==========================================
+       Müşteriler - ms
+       ========================================== */
+    .ms-ozet {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 20px;
-        margin-bottom: 25px;
+        gap: 14px;
+        margin-bottom: 20px;
     }
 
-    .stat-card {
+    .ms-ozet-kart {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 17px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
         background: var(--y-yuzey);
-        border-radius: 16px;
-        padding: 24px;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-        transition: transform 0.2s, box-shadow 0.2s;
+        box-shadow: var(--y-golge);
+        color: var(--y-metin-2);
+        transition: border-color .15s;
     }
 
-    .stat-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    .ms-ozet-kart:hover {
+        border-color: var(--y-primary);
+        text-decoration: none;
     }
 
-    .stat-icon {
-        width: 56px;
-        height: 56px;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
+    .ms-ozet-kart.secili {
+        border-color: var(--y-primary);
+        background: var(--y-primary-soft);
     }
 
-    .stat-icon.purple {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    .ms-ozet-ikon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 15px;
     }
 
-    .stat-icon.green {
-        background: linear-gradient(135deg, #10b981, #34d399);
-    }
-
-    .stat-icon.orange {
-        background: linear-gradient(135deg, #f59e0b, #fbbf24);
-    }
-
-    .stat-icon.blue {
-        background: linear-gradient(135deg, #3b82f6, #60a5fa);
-    }
-
-    .stat-value {
-        font-size: 28px;
-        font-weight: 800;
+    .ms-ozet-kart b {
+        display: block;
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -.02em;
         color: var(--y-metin);
+        line-height: 1.2;
     }
 
-    .stat-label {
-        font-size: 13px;
+    .ms-ozet-kart span {
+        font-size: 12.5px;
         color: var(--y-metin-3);
-        margin-top: 2px;
     }
 
-    /* Header Section */
-    .page-header {
+    /* Araç çubuğu */
+    .ms-arac {
         display: flex;
+        align-items: center;
         justify-content: space-between;
-        align-items: center;
-        margin-bottom: 25px;
         flex-wrap: wrap;
-        gap: 15px;
-    }
-
-    .page-title {
-        display: flex;
-        align-items: center;
         gap: 12px;
+        margin-bottom: 16px;
     }
 
-    .page-title h1 {
-        font-size: 28px;
-        font-weight: 800;
-        color: var(--y-metin);
-        margin: 0;
-    }
-
-    .page-title .count {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        padding: 6px 14px;
-        border-radius: 50px;
-        font-size: 14px;
-        font-weight: 600;
-    }
-
-    .header-actions {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-    }
-
-    .search-box {
+    .ms-ara {
         position: relative;
+        flex: 1;
+        min-width: 220px;
+        max-width: 420px;
     }
 
-    .search-box input {
-        padding: 12px 20px 12px 45px;
-        border: 2px solid var(--y-cizgi);
-        border-radius: 12px;
-        font-size: 14px;
-        width: 280px;
-        transition: all 0.2s;
-    }
-
-    .search-box input:focus {
-        outline: none;
-        border-color: #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    }
-
-    .search-box::before {
-        content: '🔍';
+    .ms-ara i {
         position: absolute;
-        left: 15px;
+        left: 13px;
         top: 50%;
         transform: translateY(-50%);
-        font-size: 16px;
+        font-size: 13px;
+        color: var(--y-metin-3);
+        pointer-events: none;
     }
 
-    .btn-add {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        border: none;
-        padding: 12px 24px;
-        border-radius: 12px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: all 0.2s;
-        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+    .ms-ara input {
+        width: 100%;
+        padding-left: 36px;
     }
 
-    .btn-add:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+    .ms-ara-temizle {
+        position: absolute;
+        right: 9px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--y-metin-3);
+        font-size: 12px;
     }
 
-    /* Clients Table */
-    .clients-card {
+    /* Tablo */
+    .ms-sarmal {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
         background: var(--y-yuzey);
-        border-radius: 20px;
+        box-shadow: var(--y-golge);
         overflow: hidden;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     }
 
-    .clients-table {
+    .ms-tablo {
         width: 100%;
         border-collapse: collapse;
+        font-size: 13.5px;
     }
 
-    .clients-table thead {
-        background: var(--y-yuzey-2);
-    }
-
-    .clients-table th {
-        padding: 16px 20px;
+    .ms-tablo th {
+        padding: 11px 16px;
         text-align: left;
-        font-size: 12px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+        font-size: 11px;
         font-weight: 700;
-        color: var(--y-metin-3);
+        letter-spacing: .05em;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
-        border-bottom: 2px solid var(--y-cizgi);
+        color: var(--y-metin-3);
+        white-space: nowrap;
     }
 
-    .clients-table td {
-        padding: 18px 20px;
+    .ms-tablo td {
+        padding: 12px 16px;
         border-bottom: 1px solid var(--y-cizgi-soft);
-        font-size: 14px;
-        color: var(--y-metin-2);
+        vertical-align: middle;
     }
 
-    .clients-table tbody tr {
-        transition: background 0.15s;
+    .ms-tablo tr:last-child td {
+        border-bottom: none;
     }
 
-    .clients-table tbody tr:hover {
+    .ms-tablo tbody tr:hover td {
         background: var(--y-yuzey-2);
     }
 
-    /* Client Info Cell */
-    .client-info {
+    .ms-kisi {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 11px;
     }
 
-    .client-avatar {
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+    .ms-avatar {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 50%;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 13px;
         font-weight: 700;
-        font-size: 14px;
     }
 
-    .client-details h4 {
-        margin: 0 0 3px 0;
-        font-size: 15px;
+    .ms-kisi b {
+        display: block;
         font-weight: 600;
         color: var(--y-metin);
     }
 
-    .client-details h4:hover {
-        color: #6366f1;
-    }
-
-    .client-details span {
-        font-size: 13px;
+    .ms-kisi span {
+        font-size: 11.5px;
         color: var(--y-metin-3);
     }
 
-    /* Contact Cell */
-    .contact-info {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .contact-info a {
-        color: #6366f1;
-        text-decoration: none;
-        font-size: 13px;
-    }
-
-    .contact-info a:hover {
-        text-decoration: underline;
-    }
-
-    .contact-info .phone {
-        color: var(--y-metin-3);
-        font-size: 13px;
-    }
-
-    /* Company Badge */
-    .company-badge {
-        background: var(--y-yuzey-2);
-        padding: 6px 12px;
-        border-radius: 8px;
-        font-size: 13px;
+    .ms-iletisim a {
+        display: block;
         color: var(--y-metin-2);
-        display: inline-block;
-        max-width: 200px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .company-badge.empty {
-        color: var(--y-metin-3);
-        font-style: italic;
-    }
-
-    /* Balance */
-    .balance {
-        font-weight: 600;
-        color: #10b981;
-    }
-
-    .balance.zero {
-        color: var(--y-metin-3);
-    }
-
-    /* Status Badge */
-    .status-badge {
-        padding: 6px 14px;
-        border-radius: 50px;
-        font-size: 12px;
-        font-weight: 600;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-    }
-
-    .status-badge.active {
-        background: #d1fae5;
-        color: #065f46;
-    }
-
-    .status-badge.inactive {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-
-    /* Date */
-    .date-cell {
-        color: var(--y-metin-3);
         font-size: 13px;
     }
 
-    /* Actions */
-    .actions-cell {
-        display: flex;
-        gap: 6px;
-        align-items: center;
+    .ms-iletisim a:hover {
+        color: var(--y-primary);
     }
 
-    .action-btn {
-        padding: 6px 12px;
-        border-radius: 6px;
+    .ms-iletisim span {
+        display: block;
+        margin-top: 2px;
         font-size: 12px;
-        font-weight: 500;
-        text-decoration: none;
-        transition: all 0.15s;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 4px;
-        cursor: pointer;
-        border: none;
+        color: var(--y-metin-3);
+    }
+
+    .ms-eylem {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+    }
+
+    .ms-eylem form {
+        display: inline;
+    }
+
+    .ms-sag {
+        text-align: right;
         white-space: nowrap;
     }
 
-    .action-btn.view {
-        background: #6366f1;
-        color: white;
+    /* Ekleme formu */
+    .ms-form {
+        margin-bottom: 20px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
     }
 
-    .action-btn.view:hover {
-        background: #4f46e5;
-    }
-
-    .action-btn.delete {
-        background: #fee2e2;
-        color: #dc2626;
-        padding: 6px 10px;
-    }
-
-    .action-btn.delete:hover {
-        background: #fecaca;
-    }
-
-    /* Pagination */
-    .pagination-container {
+    .ms-form summary {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        padding: 20px 25px;
+        gap: 9px;
+        padding: 13px 18px;
         background: var(--y-yuzey-2);
+        font-size: 13.5px;
+        font-weight: 700;
+        color: var(--y-metin);
+        cursor: pointer;
+        list-style: none;
+    }
+
+    .ms-form summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .ms-form summary i.ok {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--y-metin-3);
+        transition: transform .18s;
+    }
+
+    .ms-form[open] summary i.ok {
+        transform: rotate(90deg);
+    }
+
+    .ms-form-govde {
+        padding: 18px;
         border-top: 1px solid var(--y-cizgi);
     }
 
-    .pagination-info {
-        font-size: 14px;
-        color: var(--y-metin-3);
+    .ms-hata {
+        display: block;
+        margin-top: 5px;
+        font-size: 11.5px;
+        color: var(--y-danger);
     }
 
-    .pagination-links {
+    .form-group.hatali input,
+    .form-group.hatali select {
+        border-color: var(--y-danger);
+    }
+
+    .ms-tur {
         display: flex;
-        gap: 6px;
+        gap: 9px;
+        margin-bottom: 16px;
     }
 
-    .pagination-links a {
-        padding: 8px 14px;
-        border-radius: 8px;
+    .ms-tur label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        padding: 9px 16px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r-sm);
         font-size: 13px;
         font-weight: 600;
-        color: var(--y-metin-3);
-        text-decoration: none;
-        background: var(--y-yuzey);
-        border: 1px solid var(--y-cizgi);
-        transition: all 0.15s;
+        color: var(--y-metin-2);
+        cursor: pointer;
     }
 
-    .pagination-links a:hover {
-        background: var(--y-yuzey-2);
-        color: var(--y-metin);
+    .ms-tur label:has(input:checked) {
+        border-color: var(--y-primary);
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
     }
 
-    .pagination-links a.active {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        border-color: transparent;
-    }
-
-    /* Empty State */
-    .empty-state {
-        text-align: center;
-        padding: 80px 20px;
-    }
-
-    .empty-state .icon {
-        width: 100px;
-        height: 100px;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        border-radius: 50%;
+    .ms-form-alt {
         display: flex;
         align-items: center;
-        justify-content: center;
-        font-size: 48px;
-        margin: 0 auto 25px;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--y-cizgi);
     }
 
-    .empty-state h3 {
-        font-size: 22px;
-        font-weight: 700;
-        color: var(--y-metin);
-        margin-bottom: 10px;
-    }
-
-    .empty-state p {
-        color: var(--y-metin-3);
-        margin-bottom: 25px;
-    }
-
-    /* Modal Premium Styling */
-    #addModal .modal-content {
-        max-width: 600px;
-        border-radius: 20px;
-    }
-
-    #addModal .modal-header {
-        padding: 25px 30px;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        border-radius: 20px 20px 0 0;
-    }
-
-    #addModal .modal-header h3 {
-        font-size: 20px;
-        font-weight: 700;
-    }
-
-    #addModal .modal-body {
-        padding: 30px;
-    }
-
-    #addModal .form-group label {
-        font-weight: 600;
-        color: var(--y-metin);
-        margin-bottom: 8px;
-        display: block;
-    }
-
-    #addModal .form-control {
-        border-radius: 10px;
-        border: 2px solid var(--y-cizgi);
-        padding: 12px 16px;
-    }
-
-    #addModal .form-control:focus {
-        border-color: #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    }
-
-    #addModal .modal-footer {
-        padding: 20px 30px;
-        background: var(--y-yuzey-2);
-        border-radius: 0 0 20px 20px;
-    }
-
-    /* Alert Premium */
-    .alert-premium {
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin-bottom: 25px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        font-weight: 500;
-    }
-
-    .alert-premium.success {
-        background: #d1fae5;
-        color: #065f46;
-        border-left: 4px solid #10b981;
-    }
-
-    .alert-premium.error {
-        background: #fee2e2;
-        color: #991b1b;
-        border-left: 4px solid #ef4444;
-    }
-
-    /* Responsive */
-    @media (max-width: 1200px) {
-
-        .clients-table th:nth-child(5),
-        .clients-table td:nth-child(5) {
+    @media (max-width: 900px) {
+        .ms-gizle-orta {
             display: none;
         }
     }
 
-    @media (max-width: 992px) {
-        .search-box input {
-            width: 200px;
-        }
-
-        .clients-table th:nth-child(4),
-        .clients-table td:nth-child(4) {
+    @media (max-width: 640px) {
+        .ms-gizle-kucuk {
             display: none;
-        }
-    }
-
-    @media (max-width: 768px) {
-        .page-header {
-            flex-direction: column;
-            align-items: flex-start;
-        }
-
-        .header-actions {
-            width: 100%;
-            flex-wrap: wrap;
-        }
-
-        .search-box {
-            width: 100%;
-        }
-
-        .search-box input {
-            width: 100%;
         }
     }
 </style>
 
-<div class="clients-page">
-    <?php if ($message): ?>
-        <div class="alert-premium <?= $messageType ?>">
-            <?= $messageType === 'success' ? '✅' : '❌' ?>     <?= $message ?>
-        </div>
-    <?php endif; ?>
-
-    <!-- Stats Grid -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon purple">👥</div>
-            <div>
-                <div class="stat-value"><?= $total ?></div>
-                <div class="stat-label">Toplam Müşteri</div>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon green">✅</div>
-            <div>
-                <div class="stat-value"><?= $activeCount ?></div>
-                <div class="stat-label">Aktif Müşteri</div>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon orange">🏢</div>
-            <div>
-                <div class="stat-value"><?= $corporateCount ?></div>
-                <div class="stat-label">Kurumsal</div>
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon blue">📅</div>
-            <div>
-                <div class="stat-value"><?= $thisMonthCount ?></div>
-                <div class="stat-label">Bu Ay Eklenen</div>
-            </div>
-        </div>
+<div class="page-header">
+    <div>
+        <h1>Müşteriler</h1>
+        <p><?= number_format($toplam, 0, ',', '.') ?> kayıt<?= $arama !== '' || $suzgec !== '' ? ' (süzülmüş)' : '' ?></p>
     </div>
-
-    <!-- Page Header -->
-    <div class="page-header">
-        <div class="page-title">
-            <h1>Müşteri Yönetimi</h1>
-            <span class="count"><?= $total ?> kayıt</span>
-        </div>
-        <div class="header-actions">
-            <form method="GET" class="search-box">
-                <input type="text" name="search" placeholder="Ara... (ad, e-posta, şirket)"
-                    value="<?= htmlspecialchars($search) ?>">
-            </form>
-            <button onclick="openModal('addModal')" class="btn-add">
-                <span>+</span> Yeni Müşteri
-            </button>
-        </div>
-    </div>
-
-    <!-- Clients Table -->
-    <div class="clients-card">
-        <?php if (empty($clients)): ?>
-            <div class="empty-state">
-                <div class="icon">👥</div>
-                <h3>Henüz müşteri yok</h3>
-                <p>İlk müşterinizi eklemek için butona tıklayın.</p>
-                <button onclick="openModal('addModal')" class="btn-add">+ Yeni Müşteri Ekle</button>
-            </div>
-        <?php else: ?>
-            <table class="clients-table">
-                <thead>
-                    <tr>
-                        <th>Müşteri</th>
-                        <th>İletişim</th>
-                        <th>Şirket</th>
-                        <th>Bakiye</th>
-                        <th>Durum</th>
-                        <th>Kayıt</th>
-                        <th>İşlemler</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($clients as $client): ?>
-                        <tr>
-                            <td>
-                                <a href="client-edit.php?id=<?= $client['id'] ?>" style="text-decoration: none;">
-                                    <div class="client-info">
-                                        <div class="client-avatar">
-                                            <?= strtoupper(substr($client['first_name'], 0, 1) . substr($client['last_name'], 0, 1)) ?>
-                                        </div>
-                                        <div class="client-details">
-                                            <h4><?= htmlspecialchars($client['first_name'] . ' ' . $client['last_name']) ?></h4>
-                                            <span>#<?= $client['id'] ?></span>
-                                        </div>
-                                    </div>
-                                </a>
-                            </td>
-                            <td>
-                                <div class="contact-info">
-                                    <a
-                                        href="mailto:<?= htmlspecialchars($client['email']) ?>"><?= htmlspecialchars($client['email']) ?></a>
-                                    <span class="phone"><?= htmlspecialchars($client['phone'] ?? '-') ?></span>
-                                </div>
-                            </td>
-                            <td>
-                                <?php if (!empty($client['company_name'])): ?>
-                                    <span class="company-badge"
-                                        title="<?= htmlspecialchars($client['company_name']) ?>"><?= htmlspecialchars($client['company_name']) ?></span>
-                                <?php else: ?>
-                                    <span class="company-badge empty">Bireysel</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php $balance = (float) ($client['credit_balance'] ?? 0); ?>
-                                <span class="balance <?= $balance <= 0 ? 'zero' : '' ?>">
-                                    <?= number_format($balance, 2) ?> ₺
-                                </span>
-                            </td>
-                            <td>
-                                <?php if ($client['is_active']): ?>
-                                    <span class="status-badge active">● Aktif</span>
-                                <?php else: ?>
-                                    <span class="status-badge inactive">● Pasif</span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="date-cell">
-                                <?= date('d.m.Y', strtotime($client['created_at'])) ?>
-                            </td>
-                            <td>
-                                <div class="actions-cell">
-                                    <a href="client-edit.php?id=<?= $client['id'] ?>" class="action-btn view">👁 Görüntüle</a>
-                                    <button
-                                        onclick="confirmDelete('Bu müşteriyi silmek istediğinizden emin misiniz?', '?delete=<?= $client['id'] ?>')"
-                                        class="action-btn delete">🗑</button>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-
-            <?php if ($totalPages > 1): ?>
-                <div class="pagination-container">
-                    <div class="pagination-info">
-                        Sayfa <?= $page ?> / <?= $totalPages ?> (Toplam <?= $total ?> kayıt)
-                    </div>
-                    <div class="pagination-links">
-                        <?php if ($page > 1): ?>
-                            <a href="?page=<?= $page - 1 ?><?= $search ? '&search=' . urlencode($search) : '' ?>">← Önceki</a>
-                        <?php endif; ?>
-
-                        <?php
-                        $start = max(1, $page - 2);
-                        $end = min($totalPages, $page + 2);
-                        for ($i = $start; $i <= $end; $i++):
-                            ?>
-                            <a href="?page=<?= $i ?><?= $search ? '&search=' . urlencode($search) : '' ?>"
-                                class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
-                        <?php endfor; ?>
-
-                        <?php if ($page < $totalPages): ?>
-                            <a href="?page=<?= $page + 1 ?><?= $search ? '&search=' . urlencode($search) : '' ?>">Sonraki →</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            <?php endif; ?>
-        <?php endif; ?>
-    </div>
+    <button type="button" class="btn btn-primary" onclick="document.getElementById('ms-form').open = true;
+        document.getElementById('ms-form').scrollIntoView({behavior:'smooth'});
+        document.getElementById('first_name').focus();">
+        <i class="fas fa-user-plus"></i> Yeni müşteri
+    </button>
 </div>
 
-<!-- Yeni Müşteri Modal -->
-<div id="addModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>👤 Yeni Müşteri Ekle</h3>
-            <button onclick="closeModal('addModal')" class="close-btn">&times;</button>
-        </div>
-        <form method="POST">
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= $mesaj['tip'] === 'success' ? 'success' : 'error' ?>">
+        <i class="fas fa-<?= $mesaj['tip'] === 'success' ? 'circle-check' : 'circle-exclamation' ?> alert-icon"></i>
+        <span><?= htmlspecialchars((string) $mesaj['metin']) ?></span>
+    </div>
+<?php endif; ?>
+
+<!-- Özet -->
+<div class="ms-ozet">
+    <?php foreach ($ozet as [$ad, $deger, $ikon, $filtre]): ?>
+        <a class="ms-ozet-kart <?= $filtre !== '' && $suzgec === $filtre ? 'secili' : '' ?>"
+            href="clients.php<?= $filtre !== '' ? '?durum=' . $filtre : '' ?>">
+            <span class="ms-ozet-ikon"><i class="fas <?= $ikon ?>"></i></span>
+            <span>
+                <b><?= number_format($deger, 0, ',', '.') ?></b>
+                <span><?= $ad ?></span>
+            </span>
+        </a>
+    <?php endforeach; ?>
+</div>
+
+<!-- Ekleme formu -->
+<details class="ms-form" id="ms-form" <?= $formAcik ? 'open' : '' ?>>
+    <summary>
+        <i class="fas fa-user-plus"></i> Yeni müşteri ekle
+        <i class="fas fa-chevron-right ok"></i>
+    </summary>
+    <div class="ms-form-govde">
+        <?php if (isset($hatalar['genel'])): ?>
+            <div class="alert alert-error">
+                <i class="fas fa-circle-exclamation alert-icon"></i>
+                <span><?= htmlspecialchars($hatalar['genel']) ?></span>
+            </div>
+        <?php endif; ?>
+
+        <form method="post" novalidate>
+            <?= Guvenlik::alan() ?>
             <input type="hidden" name="action" value="add">
-            <div class="modal-body">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Ad *</label>
-                        <input type="text" name="first_name" class="form-control" required placeholder="Müşteri adı">
-                    </div>
-                    <div class="form-group">
-                        <label>Soyad *</label>
-                        <input type="text" name="last_name" class="form-control" required placeholder="Müşteri soyadı">
-                    </div>
+
+            <div class="ms-tur">
+                <label>
+                    <input type="radio" name="account_type" value="individual"
+                        <?= $eski['account_type'] === 'individual' ? 'checked' : '' ?>>
+                    Bireysel
+                </label>
+                <label>
+                    <input type="radio" name="account_type" value="corporate"
+                        <?= $eski['account_type'] === 'corporate' ? 'checked' : '' ?>>
+                    Kurumsal
+                </label>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group <?= isset($hatalar['first_name']) ? 'hatali' : '' ?>">
+                    <label for="first_name">Ad *</label>
+                    <input type="text" id="first_name" name="first_name" required maxlength="100"
+                        value="<?= htmlspecialchars($eski['first_name']) ?>">
+                    <?php if (isset($hatalar['first_name'])): ?>
+                        <span class="ms-hata"><?= htmlspecialchars($hatalar['first_name']) ?></span>
+                    <?php endif; ?>
                 </div>
-                <div class="form-group">
-                    <label>E-posta *</label>
-                    <input type="email" name="email" class="form-control" required placeholder="ornek@email.com">
-                </div>
-                <div class="form-group">
-                    <label>Şifre *</label>
-                    <input type="password" name="password" class="form-control" required minlength="8"
-                        placeholder="En az 8 karakter">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Şirket Adı</label>
-                        <input type="text" name="company_name" class="form-control"
-                            placeholder="Şirket adı (opsiyonel)">
-                    </div>
-                    <div class="form-group">
-                        <label>Telefon</label>
-                        <input type="tel" name="phone" class="form-control" placeholder="05XX XXX XX XX">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Şehir</label>
-                        <input type="text" name="city" class="form-control" placeholder="Şehir">
-                    </div>
-                    <div class="form-group">
-                        <label>Ülke</label>
-                        <select name="country" class="form-control">
-                            <option value="TR">Türkiye</option>
-                            <option value="US">ABD</option>
-                            <option value="DE">Almanya</option>
-                            <option value="GB">İngiltere</option>
-                            <option value="NL">Hollanda</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Adres</label>
-                    <textarea name="address" class="form-control" rows="2" placeholder="Açık adres"></textarea>
+                <div class="form-group <?= isset($hatalar['last_name']) ? 'hatali' : '' ?>">
+                    <label for="last_name">Soyad *</label>
+                    <input type="text" id="last_name" name="last_name" required maxlength="100"
+                        value="<?= htmlspecialchars($eski['last_name']) ?>">
+                    <?php if (isset($hatalar['last_name'])): ?>
+                        <span class="ms-hata"><?= htmlspecialchars($hatalar['last_name']) ?></span>
+                    <?php endif; ?>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" onclick="closeModal('addModal')" class="btn btn-outline">İptal</button>
-                <button type="submit" class="btn btn-primary">💾 Kaydet</button>
+
+            <div class="form-row">
+                <div class="form-group <?= isset($hatalar['email']) ? 'hatali' : '' ?>">
+                    <label for="email">E-posta *</label>
+                    <input type="email" id="email" name="email" required maxlength="255" dir="ltr"
+                        value="<?= htmlspecialchars($eski['email']) ?>">
+                    <?php if (isset($hatalar['email'])): ?>
+                        <span class="ms-hata"><?= htmlspecialchars($hatalar['email']) ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="form-group <?= isset($hatalar['password']) ? 'hatali' : '' ?>">
+                    <label for="password">Parola *</label>
+                    <input type="text" id="password" name="password" required minlength="8"
+                        autocomplete="new-password" placeholder="En az 8 karakter">
+                    <?php if (isset($hatalar['password'])): ?>
+                        <span class="ms-hata"><?= htmlspecialchars($hatalar['password']) ?></span>
+                    <?php else: ?>
+                        <small>Müşteriye bu parolayla giriş yapacağı bildirilmeli.</small>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group <?= isset($hatalar['company_name']) ? 'hatali' : '' ?>">
+                    <label for="company_name">Şirket adı</label>
+                    <input type="text" id="company_name" name="company_name" maxlength="255"
+                        value="<?= htmlspecialchars($eski['company_name']) ?>">
+                    <?php if (isset($hatalar['company_name'])): ?>
+                        <span class="ms-hata"><?= htmlspecialchars($hatalar['company_name']) ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="form-group <?= isset($hatalar['phone']) ? 'hatali' : '' ?>">
+                    <label for="phone">Telefon</label>
+                    <input type="tel" id="phone" name="phone" maxlength="30" dir="ltr"
+                        placeholder="532 123 45 67" value="<?= htmlspecialchars($eski['phone']) ?>">
+                    <?php if (isset($hatalar['phone'])): ?>
+                        <span class="ms-hata"><?= htmlspecialchars($hatalar['phone']) ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="tax_office">Vergi dairesi</label>
+                    <input type="text" id="tax_office" name="tax_office" maxlength="100"
+                        value="<?= htmlspecialchars($eski['tax_office']) ?>">
+                </div>
+                <div class="form-group">
+                    <label for="tax_id">Vergi / TC numarası</label>
+                    <input type="text" id="tax_id" name="tax_id" maxlength="50"
+                        value="<?= htmlspecialchars($eski['tax_id']) ?>">
+                </div>
+                <div class="form-group">
+                    <label for="city">Şehir</label>
+                    <input type="text" id="city" name="city" maxlength="100"
+                        value="<?= htmlspecialchars($eski['city']) ?>">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="address">Adres</label>
+                <textarea id="address" name="address" rows="2"
+                    style="min-height:70px"><?= htmlspecialchars($eski['address']) ?></textarea>
+            </div>
+
+            <div class="ms-form-alt">
+                <button type="reset" class="btn btn-outline">Temizle</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-check"></i> Müşteriyi kaydet
+                </button>
             </div>
         </form>
     </div>
+</details>
+
+<!-- Araç çubuğu -->
+<form class="ms-arac" method="get">
+    <?php if ($suzgec !== ''): ?>
+        <input type="hidden" name="durum" value="<?= htmlspecialchars($suzgec) ?>">
+    <?php endif; ?>
+    <div class="ms-ara">
+        <i class="fas fa-magnifying-glass"></i>
+        <input type="search" name="q" value="<?= htmlspecialchars($arama) ?>"
+            placeholder="Ad, e-posta, şirket veya telefon ile ara…">
+    </div>
+    <div style="display:flex; gap:8px;">
+        <button type="submit" class="btn btn-outline"><i class="fas fa-filter"></i> Ara</button>
+        <?php if ($arama !== '' || $suzgec !== ''): ?>
+            <a href="clients.php" class="btn btn-outline"><i class="fas fa-xmark"></i> Sıfırla</a>
+        <?php endif; ?>
+    </div>
+</form>
+
+<!-- Liste -->
+<div class="ms-sarmal">
+    <?php if (!$musteriler): ?>
+        <div class="empty-state">
+            <i class="fas fa-users"></i>
+            <h3><?= $arama !== '' || $suzgec !== '' ? 'Eşleşen müşteri yok' : 'Henüz müşteri yok' ?></h3>
+            <p>
+                <?= $arama !== '' || $suzgec !== ''
+                    ? 'Aramayı değiştirin ya da süzgeci sıfırlayın.'
+                    : 'İlk müşteriyi yukarıdaki formdan ekleyebilirsiniz.' ?>
+            </p>
+        </div>
+    <?php else: ?>
+        <table class="ms-tablo">
+            <thead>
+                <tr>
+                    <th>Müşteri</th>
+                    <th class="ms-gizle-kucuk">İletişim</th>
+                    <th class="ms-gizle-orta">Şirket</th>
+                    <th class="ms-sag ms-gizle-orta">Bakiye</th>
+                    <th>Durum</th>
+                    <th class="ms-gizle-kucuk">Kayıt</th>
+                    <th class="ms-sag">İşlem</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($musteriler as $m):
+                    $id = (int) $m['id'];
+                    $ad = trim((string) $m['first_name'] . ' ' . (string) $m['last_name']);
+                    $bas = mb_strtoupper(mb_substr($ad !== '' ? $ad : '?', 0, 1), 'UTF-8');
+                    $etkin = (int) $m['is_active'] === 1;
+                    $bagli = $bagliSayi[$id] ?? [];
+                    $uyari = $bagli
+                        ? $ad . ' silinecek. Bağlı ' . implode(', ', $bagli)
+                        . ' da birlikte silinir ve geri alınamaz. Devam edilsin mi?'
+                        : $ad . ' silinecek. Devam edilsin mi?';
+                    ?>
+                    <tr>
+                        <td>
+                            <div class="ms-kisi">
+                                <span class="ms-avatar"><?= htmlspecialchars($bas) ?></span>
+                                <span>
+                                    <b><?= htmlspecialchars($ad !== '' ? $ad : 'İsimsiz') ?></b>
+                                    <span>#<?= $id ?>
+                                        <?= $m['account_type'] === 'corporate' ? '· Kurumsal' : '· Bireysel' ?></span>
+                                </span>
+                            </div>
+                        </td>
+                        <td class="ms-iletisim ms-gizle-kucuk">
+                            <a href="mailto:<?= htmlspecialchars((string) $m['email']) ?>"
+                                dir="ltr"><?= htmlspecialchars((string) $m['email']) ?></a>
+                            <?php if (!empty($m['phone'])): ?>
+                                <span dir="ltr"><?= htmlspecialchars((string) $m['phone']) ?></span>
+                            <?php endif; ?>
+                        </td>
+                        <td class="ms-gizle-orta">
+                            <?= !empty($m['company_name'])
+                                ? htmlspecialchars((string) $m['company_name'])
+                                : '<span style="color:var(--y-metin-3)">—</span>' ?>
+                        </td>
+                        <td class="ms-sag ms-gizle-orta">
+                            <?= number_format((float) ($m['credit_balance'] ?? 0), 2, ',', '.') ?> ₺
+                        </td>
+                        <td>
+                            <span class="badge <?= $etkin ? 'badge-success' : '' ?>">
+                                <?= $etkin ? 'Etkin' : 'Pasif' ?>
+                            </span>
+                        </td>
+                        <td class="ms-gizle-kucuk" style="color:var(--y-metin-3); font-size:12.5px;">
+                            <?= date('d.m.Y', strtotime((string) $m['created_at'])) ?>
+                        </td>
+                        <td class="ms-sag">
+                            <div class="ms-eylem">
+                                <a class="action-btn" href="client-view.php?id=<?= $id ?>" title="Görüntüle">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a class="action-btn" href="client-edit.php?id=<?= $id ?>" title="Düzenle">
+                                    <i class="fas fa-pen"></i>
+                                </a>
+
+                                <form method="post">
+                                    <?= Guvenlik::alan() ?>
+                                    <input type="hidden" name="durum_id" value="<?= $id ?>">
+                                    <input type="hidden" name="durum" value="<?= $etkin ? 0 : 1 ?>">
+                                    <button type="submit" class="action-btn"
+                                        title="<?= $etkin ? 'Pasife al' : 'Etkinleştir' ?>">
+                                        <i class="fas fa-<?= $etkin ? 'user-slash' : 'user-check' ?>"></i>
+                                    </button>
+                                </form>
+
+                                <form method="post"
+                                    onsubmit="return confirm(<?= htmlspecialchars(json_encode($uyari, JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>);">
+                                    <?= Guvenlik::alan() ?>
+                                    <input type="hidden" name="delete" value="<?= $id ?>">
+                                    <button type="submit" class="action-btn" title="Sil">
+                                        <i class="fas fa-trash-can"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
 </div>
 
-<?php include 'includes/footer.php'; ?>
+<?php if ($sayfaSayisi > 1): ?>
+    <?php
+    $bag = static function (int $s) use ($arama, $suzgec): string {
+        $p = ['page' => $s];
+        if ($arama !== '') {
+            $p['q'] = $arama;
+        }
+        if ($suzgec !== '') {
+            $p['durum'] = $suzgec;
+        }
+        return 'clients.php?' . http_build_query($p);
+    };
+    ?>
+    <div class="pagination">
+        <?php if ($sayfa > 1): ?>
+            <a href="<?= htmlspecialchars($bag($sayfa - 1)) ?>"><i class="fas fa-chevron-left"></i></a>
+        <?php endif; ?>
+        <?php for ($i = max(1, $sayfa - 2); $i <= min($sayfaSayisi, $sayfa + 2); $i++): ?>
+            <?php if ($i === $sayfa): ?>
+                <span class="active"><?= $i ?></span>
+            <?php else: ?>
+                <a href="<?= htmlspecialchars($bag($i)) ?>"><?= $i ?></a>
+            <?php endif; ?>
+        <?php endfor; ?>
+        <?php if ($sayfa < $sayfaSayisi): ?>
+            <a href="<?= htmlspecialchars($bag($sayfa + 1)) ?>"><i class="fas fa-chevron-right"></i></a>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
+
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
