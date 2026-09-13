@@ -199,12 +199,6 @@ $satilan = (int) Database::fetchColumn(
     "SELECT COUNT(DISTINCT product_id) FROM services WHERE status IN ('pending','active','suspended')"
 );
 
-$tipIkon = [
-    'hosting' => 'fa-globe', 'vps' => 'fa-server', 'vds' => 'fa-hard-drive',
-    'dedicated' => 'fa-database', 'domain' => 'fa-at', 'ssl' => 'fa-lock',
-    'other' => 'fa-cube',
-];
-
 $pageTitle = 'Ürünler';
 $currentPage = 'products';
 require_once __DIR__ . '/includes/header.php';
@@ -569,7 +563,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="ur-alan" id="ur-tip-alani">
                 <label for="type">Tür</label>
                 <select name="type" id="type" class="form-control">
-                    <?php foreach (Katalog::URUN_TIPLERI as $deger => $ad): ?>
+                    <?php foreach (Katalog::tipler() as $deger => $t): $ad = $t['ad']; ?>
                         <option value="<?= $deger ?>"><?= $ad ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -621,7 +615,7 @@ require_once __DIR__ . '/includes/header.php';
         </select>
         <select name="tip" class="form-control">
             <option value="">Tüm türler</option>
-            <?php foreach (Katalog::URUN_TIPLERI as $deger => $ad): ?>
+            <?php foreach (Katalog::tipler() as $deger => $t): $ad = $t['ad']; ?>
                 <option value="<?= $deger ?>" <?= $tipSuzgec === $deger ? 'selected' : '' ?>><?= $ad ?></option>
             <?php endforeach; ?>
         </select>
@@ -669,14 +663,14 @@ require_once __DIR__ . '/includes/header.php';
                 ?>
                 <div class="ur-satir <?= $etkin ? '' : 'pasif' ?>">
                     <span class="ur-ikon">
-                        <i class="fas <?= $tipIkon[$u['type']] ?? 'fa-cube' ?>"></i>
+                        <i class="fas <?= Katalog::tipIkonu($u['type']) ?>"></i>
                     </span>
 
                     <div class="ur-orta">
                         <b><a href="product-edit.php?id=<?= (int) $u['id'] ?>">
                             <?= htmlspecialchars((string) $u['name']) ?></a></b>
                         <div class="ur-alt">
-                            <span class="ur-etiket"><?= Katalog::URUN_TIPLERI[$u['type']] ?? htmlspecialchars((string) $u['type']) ?></span>
+                            <span class="ur-etiket"><?= htmlspecialchars(Katalog::tipAdi($u['type'])) ?></span>
                             <?php if (!$etkin): ?>
                                 <span class="ur-etiket">Pasif</span>
                             <?php endif; ?>

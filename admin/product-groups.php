@@ -157,12 +157,6 @@ $gruplar = Database::fetchAll(
 
 $grupsuzUrun = (int) Database::fetchColumn("SELECT COUNT(*) FROM products WHERE group_id IS NULL");
 
-$tipIkon = [
-    'hosting' => 'fa-globe', 'vps' => 'fa-server', 'vds' => 'fa-hard-drive',
-    'dedicated' => 'fa-database', 'domain' => 'fa-at', 'ssl' => 'fa-lock',
-    'other' => 'fa-cube',
-];
-
 $pageTitle = 'Ürün grupları';
 $currentPage = 'product-groups';
 require_once __DIR__ . '/includes/header.php';
@@ -470,13 +464,13 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="gr-satir <?= $gizli ? 'gizli' : '' ?> <?= $secili ? 'secili' : '' ?>">
                     <span class="gr-sira"><?= (int) $g['order_priority'] ?></span>
                     <span class="gr-ikon">
-                        <i class="fas <?= $tipIkon[$g['type']] ?? 'fa-cube' ?>"></i>
+                        <i class="fas <?= Katalog::tipIkonu($g['type']) ?>"></i>
                     </span>
 
                     <div class="gr-orta">
                         <b><?= htmlspecialchars((string) $g['name']) ?></b>
                         <div class="gr-alt">
-                            <span class="gr-etiket"><?= Katalog::URUN_TIPLERI[$g['type']] ?? htmlspecialchars((string) $g['type']) ?></span>
+                            <span class="gr-etiket"><?= htmlspecialchars(Katalog::tipAdi($g['type'])) ?></span>
                             <span class="gr-etiket kod">/<?= htmlspecialchars((string) $g['slug']) ?></span>
                             <?php if ($gizli): ?>
                                 <span class="gr-etiket">Gizli</span>
@@ -540,7 +534,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="gr-alan">
                     <label for="type">Ürün türü</label>
                     <select name="type" id="type" class="form-control">
-                        <?php foreach (Katalog::URUN_TIPLERI as $deger => $ad): ?>
+                        <?php foreach (Katalog::tipler() as $deger => $t): $ad = $t['ad']; ?>
                             <option value="<?= $deger ?>"
                                 <?= ($duzenlenen['type'] ?? 'hosting') === $deger ? 'selected' : '' ?>>
                                 <?= $ad ?>

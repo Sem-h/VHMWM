@@ -35,6 +35,96 @@ final class Katalog
         'price_triennially' => '3 yıllık',
     ];
 
+    /** Tür kartlarının varsayılan görünümü; product_types satırı yoksa kullanılır */
+    private const TIP_VARSAYILAN = [
+        'hosting' => ['fa-globe', '#f97316'],
+        'vps' => ['fa-server', '#10b981'],
+        'vds' => ['fa-hard-drive', '#6366f1'],
+        'dedicated' => ['fa-database', '#8b5cf6'],
+        'domain' => ['fa-at', '#0ea5e9'],
+        'ssl' => ['fa-lock', '#22c55e'],
+        'other' => ['fa-cube', '#64748b'],
+    ];
+
+    /** @var array<string,array{ad:string,ikon:string,renk:string,sira:int}>|null */
+    private static ?array $tipOnbellek = null;
+
+    /**
+     * Ürün türlerinin görünümü.
+     *
+     * Hangi türlerin var olduğunu products.type enum'u belirler; adı,
+     * simgesi ve rengi product_types tablosundan gelir. Tablo eskiden
+     * yalnızca kendi yönetim sayfası tarafından okunuyordu, yani orada
+     * yapılan değişiklik hiçbir yerde görünmüyordu.
+     *
+     * @return array<string,array{ad:string,ikon:string,renk:string,sira:int}>
+     */
+    public static function tipler(): array
+    {
+        if (self::$tipOnbellek !== null) {
+            return self::$tipOnbellek;
+        }
+
+        $satirlar = [];
+        try {
+            foreach (Database::fetchAll("SELECT * FROM product_types") as $r) {
+                $satirlar[(string) $r['slug']] = $r;
+            }
+        } catch (Throwable $e) {
+            error_log('Ürün türleri okunamadı: ' . $e->getMessage());
+        }
+
+        $liste = [];
+        $sira = 0;
+
+        foreach (self::URUN_TIPLERI as $slug => $varsayilanAd) {
+            $r = $satirlar[$slug] ?? null;
+            [$ikon, $renk] = self::TIP_VARSAYILAN[$slug] ?? ['fa-cube', '#64748b'];
+
+            $liste[$slug] = [
+                'ad' => $r && trim((string) $r['label']) !== '' ? (string) $r['label'] : $varsayilanAd,
+                'ikon' => $r && trim((string) $r['icon']) !== '' ? (string) $r['icon'] : $ikon,
+                'renk' => $r && trim((string) $r['color']) !== '' ? (string) $r['color'] : $renk,
+                'sira' => $r ? (int) $r['order_priority'] : ++$sira,
+            ];
+        }
+
+        uasort($liste, static fn(array $a, array $b): int => $a['sira'] <=> $b['sira']);
+
+        return self::$tipOnbellek = $liste;
+    }
+
+    /** Tek türün görünen adı */
+    public static function tipAdi(?string $slug): string
+    {
+        $tipler = self::tipler();
+
+        return $tipler[(string) $slug]['ad'] ?? (string) $slug;
+    }
+
+    /** Tek türün simgesi */
+    public static function tipIkonu(?string $slug): string
+    {
+        $tipler = self::tipler();
+
+        return $tipler[(string) $slug]['ikon'] ?? 'fa-cube';
+    }
+
+    /** products.type enum'unda karşılığı olmayan product_types satırları */
+    public static function sahipsizTipler(): array
+    {
+        try {
+            $hepsi = Database::fetchAll("SELECT * FROM product_types ORDER BY order_priority, label");
+        } catch (Throwable $e) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $hepsi,
+            static fn(array $r): bool => !isset(self::URUN_TIPLERI[(string) $r['slug']])
+        ));
+    }
+
     private const TR_HARFLER = [
         'ş' => 's', 'Ş' => 's', 'ı' => 'i', 'I' => 'i', 'İ' => 'i',
         'ğ' => 'g', 'Ğ' => 'g', 'ü' => 'u', 'Ü' => 'u',
