@@ -244,7 +244,10 @@ require_once __DIR__ . '/theme/includes/header.php';
         transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
 
-    .vc-btn-primary {
+    /* Sarmalayıcıyla birlikte yazılır: aksi halde yukarıdaki
+       ".vc a { color: inherit }" kuralı beyaz yazıyı eziyor ve
+       açık temada mavi buton koyu yazılı kalıyordu. */
+    .vc .vc-btn-primary {
         background: var(--vc-accent);
         color: #fff;
     }
@@ -1232,6 +1235,53 @@ require_once __DIR__ . '/theme/includes/header.php';
         .vc-help-ch:last-child {
             border-bottom: none;
         }
+    }
+
+    /* ==========================================
+       Açık tema
+       Koyu temada yüzeyler zeminden koyulukla ayrışıyor;
+       açık temada kart da zemin de beyaza yakın olduğu için
+       sayfa düz görünüyordu. Zemini soğuk maviye çekip
+       kartları beyaz bırakıyoruz. Koyu tema etkilenmez.
+       ========================================== */
+    [data-theme="light"] .vc {
+        --vc-line: #d3e2f8;
+        background: #eff5fe;
+    }
+
+    /* Ara bölümler bir ton koyu; beyaz kartlar üstünde yükselir */
+    [data-theme="light"] .vc-section.is-alt {
+        background: #e4edfb;
+    }
+
+    /* Karşılaştırma tablosunun kendi zemini yok; mavinin
+       üstünde kalmasın diye açık temada beyaz kutuya alınır */
+    [data-theme="light"] .vc-cmp-wrap {
+        background: var(--vc-surface);
+        border: 1px solid var(--vc-line);
+        border-radius: var(--vc-radius);
+    }
+
+    /* Beyaz yüzeyler zeminden gölgeyle de ayrılsın */
+    [data-theme="light"] .vc-panel,
+    [data-theme="light"] .vc-quote,
+    [data-theme="light"] .vc-specs,
+    [data-theme="light"] .vc-table-wrap,
+    [data-theme="light"] .vc-cmp-wrap,
+    [data-theme="light"] .vc-help {
+        box-shadow:
+            0 1px 2px rgba(36, 116, 245, 0.05),
+            0 10px 26px -14px rgba(36, 116, 245, 0.28);
+    }
+
+    /* Kutu başlık şeritleri, teknik özellik başlıklarıyla aynı tonda */
+    [data-theme="light"] .vc-quote-head,
+    [data-theme="light"] .vc-quote-foot {
+        background: color-mix(in srgb, var(--primary) 5%, transparent);
+    }
+
+    [data-theme="light"] .vc-block-title {
+        color: #5f7da6;
     }
 </style>
 

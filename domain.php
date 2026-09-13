@@ -1,471 +1,685 @@
 <?php
 /**
- * WHMVM - Domain Sorgulama & Kayıt Sayfası
+ * VHM - Alan Adı Sorgulama ve Kayıt
+ *
+ * Uzantılar ve fiyatlar domain_pricing tablosundan gelir. Müsaitlik
+ * DomainNameAPI registrar modülünden sorulur; modül yapılandırılmamışsa
+ * durum "bilinmiyor" olarak gösterilir. Eski sürümde hem müsaitlik hem
+ * fiyat rand() ile üretiliyordu.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/Database.php';
+require_once __DIR__ . '/includes/Settings.php';
+require_once __DIR__ . '/includes/AlanAdi.php';
 
 session_name(SESSION_NAME);
 session_start();
 
-// Sayfa değişkenleri
-$pageTitle = 'Domain Kayıt & Transfer';
-$pageDescription = 'Domain kaydı, transfer ve yenileme hizmetleri. .com, .net, .com.tr ve daha fazlası.';
+$pageTitle = 'Alan Adı Kayıt ve Transfer';
+$pageDescription = 'Alan adı sorgulama, kayıt, transfer ve yenileme. Fiyatlar ve uzantılar panelden yönetilir.';
 
-$query = $_GET['query'] ?? '';
-$results = [];
+$uzantilar = AlanAdi::uzantilar();
+$apiHazir = AlanAdi::apiHazir();
 
-// Domain fiyatlarını çek
-try {
-    $domainPricing = Database::fetchAll("SELECT * FROM domain_pricing ORDER BY extension ASC");
-} catch (Exception $e) {
-    $domainPricing = [];
-}
+$sorgu = trim((string) ($_GET['sorgu'] ?? $_GET['query'] ?? ''));
+$ayrik = ['ad' => '', 'uzanti' => null];
+$sonuclar = [];
+$hata = '';
 
-// Domain sorgusu yapıldıysa
-if (!empty($query)) {
-    $domain = strtolower(trim($query));
-    $domain = preg_replace('/[^a-z0-9\-]/', '', $domain);
-    
-    $extensions = ['.com', '.net', '.org', '.com.tr', '.io', '.tech', '.store'];
-    
-    foreach ($extensions as $ext) {
-        $fullDomain = $domain . $ext;
-        $results[] = [
-            'domain' => $fullDomain,
-            'available' => (rand(0, 10) > 3),
-            'price' => rand(50, 500)
-        ];
+if ($sorgu !== '') {
+    $ayrik = AlanAdi::ayikla($sorgu);
+
+    if (mb_strlen($ayrik['ad']) < 2) {
+        $hata = 'Alan adı en az 2 karakter olmalı.';
+    } elseif (!$uzantilar) {
+        $hata = 'Uzantı fiyatları henüz tanımlanmadığı için sorgulama yapılamıyor.';
+    } else {
+        /* Yazılan uzantı varsa önce o, sonra diğerleri */
+        $sira = array_keys($uzantilar);
+        if ($ayrik['uzanti'] !== null && isset($uzantilar[$ayrik['uzanti']])) {
+            $sira = array_merge(
+                [$ayrik['uzanti']],
+                array_values(array_diff($sira, [$ayrik['uzanti']]))
+            );
+        }
+        $sira = array_slice($sira, 0, 12);
+
+        $sonuclar = AlanAdi::sorgula($ayrik['ad'], $sira);
     }
 }
 
-// Header
+$paraBicim = static fn(float $t): string => '₺' . number_format($t, 2, ',', '.');
+
+$avantajlar = [
+    ['fa-user-shield', 'WHOIS gizliliği', 'Kayıt bilgileriniz herkese açık sorgularda gizlenir.'],
+    ['fa-lock', 'Transfer kilidi', 'Alan adınız izniniz olmadan başka sağlayıcıya taşınamaz.'],
+    ['fa-rotate', 'Otomatik yenileme', 'Süre dolmadan önce yenilenir, alan adı düşmez.'],
+    ['fa-server', 'DNS yönetimi', 'A, CNAME, MX ve TXT kayıtlarını panelden düzenlersiniz.'],
+];
+
 require_once __DIR__ . '/theme/includes/header.php';
 ?>
 
 <style>
-/* Page Hero */
-.page-hero {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-    padding: 120px 0 100px;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-}
+    /* ==========================================
+       Alan adı - dm
+       Renkler tasarım değişkenlerinden gelir.
+       ========================================== */
+    .dm {
+        --dm-line: var(--border-color);
+        --dm-surface: var(--bg-primary);
+        --dm-accent: var(--primary);
+        --dm-radius: 10px;
+    }
 
-.page-hero::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: 
-        radial-gradient(ellipse at 30% 50%, rgba(14, 165, 233, 0.15) 0%, transparent 50%),
-        radial-gradient(ellipse at 70% 30%, rgba(99, 102, 241, 0.1) 0%, transparent 40%);
-}
+    .dm a {
+        color: inherit;
+    }
 
-.page-hero .container { position: relative; z-index: 1; }
+    /* ===== Üst bilgi ===== */
+    .dm-hero {
+        position: relative;
+        overflow: hidden;
+        background: var(--gradient-hero);
+        border-bottom: 1px solid var(--dm-line);
+        padding: var(--space-7) 0;
+    }
 
-.page-hero h1 {
-    font-size: 48px;
-    font-weight: 800;
-    margin-bottom: 20px;
-}
+    .dm-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(ellipse 55% 50% at 15% 25%, color-mix(in srgb, var(--primary) 16%, transparent) 0%, transparent 62%),
+            radial-gradient(ellipse 45% 45% at 85% 10%, color-mix(in srgb, var(--secondary) 12%, transparent) 0%, transparent 58%);
+        pointer-events: none;
+    }
 
-.page-hero h1 span {
-    background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
+    .dm-hero>.container {
+        position: relative;
+        z-index: 1;
+    }
 
-.page-hero p {
-    font-size: 18px;
-    color: var(--gray-light);
-    max-width: 600px;
-    margin: 0 auto 40px;
-}
+    .dm-hero-inner {
+        max-width: 700px;
+        margin: 0 auto;
+        text-align: center;
+    }
 
-/* Domain Search */
-.domain-search-box {
-    max-width: 700px;
-    margin: 0 auto;
-    display: flex;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--border);
-    border-radius: 60px;
-    padding: 8px;
-    backdrop-filter: blur(10px);
-}
+    .dm-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 50px;
+        border: 1px solid var(--dm-line);
+        background: var(--dm-surface);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
 
-.domain-search-box input {
-    flex: 1;
-    border: none;
-    background: transparent;
-    padding: 18px 25px;
-    font-size: 16px;
-    color: white;
-    outline: none;
-}
+    .dm-eyebrow i {
+        color: var(--dm-accent);
+    }
 
-.domain-search-box input::placeholder {
-    color: var(--gray);
-}
+    .dm-title {
+        margin: var(--space-3) 0 0;
+        font-size: clamp(26px, 2vw + 18px, 38px);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        color: var(--text-primary);
+    }
 
-.domain-search-box button {
-    padding: 18px 35px;
-    border-radius: 50px;
-}
+    .dm-lead {
+        max-width: 560px;
+        margin: var(--space-3) auto 0;
+        font-size: var(--text-base);
+        line-height: 1.65;
+        color: var(--text-muted);
+    }
 
-/* Domain Results */
-.results-section {
-    padding: 80px 0;
-    background: var(--darker);
-}
+    /* Arama */
+    .dm-search {
+        display: flex;
+        gap: 8px;
+        max-width: 560px;
+        margin: var(--space-5) auto 0;
+    }
 
-.results-list {
-    max-width: 800px;
-    margin: 0 auto;
-}
+    .dm-search input {
+        flex: 1;
+        min-width: 0;
+        padding: 13px 16px;
+        border: 1px solid var(--dm-line);
+        border-radius: 8px;
+        background: var(--dm-surface);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: var(--text-base);
+    }
 
-.result-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 25px 30px;
-    background: rgba(255,255,255,0.02);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    margin-bottom: 15px;
-    transition: all 0.3s ease;
-}
+    .dm-search input:focus {
+        outline: none;
+        border-color: var(--dm-accent);
+        box-shadow: var(--focus-ring);
+    }
 
-.result-item:hover {
-    border-color: rgba(99, 102, 241, 0.3);
-    background: rgba(99, 102, 241, 0.05);
-}
+    .dm .dm-search button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 13px 24px;
+        border: none;
+        border-radius: 8px;
+        background: var(--dm-accent);
+        color: #fff;
+        font-family: inherit;
+        font-size: var(--text-base);
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
 
-.result-item.available {
-    border-color: rgba(16, 185, 129, 0.3);
-}
+    .dm .dm-search button:hover {
+        background: var(--primary-dark);
+    }
 
-.result-item.taken {
-    opacity: 0.6;
-}
+    .dm-hint {
+        margin-top: var(--space-3);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+    }
 
-.result-domain {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
+    /* ===== Bölümler ===== */
+    .dm-section {
+        padding: var(--space-7) 0;
+    }
 
-.result-domain i {
-    font-size: 24px;
-}
+    .dm-section.is-alt {
+        background: var(--dm-surface);
+        border-top: 1px solid var(--dm-line);
+        border-bottom: 1px solid var(--dm-line);
+    }
 
-.result-item.available .result-domain i {
-    color: var(--success);
-}
+    .dm-head {
+        max-width: 640px;
+        margin-bottom: var(--space-5);
+    }
 
-.result-item.taken .result-domain i {
-    color: var(--danger);
-}
+    .dm-head h2 {
+        font-size: clamp(20px, 1vw + 15px, 25px);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--text-primary);
+    }
 
-.result-domain h4 {
-    font-size: 18px;
-    margin-bottom: 3px;
-}
+    .dm-head p {
+        margin-top: 6px;
+        font-size: var(--text-sm);
+        line-height: 1.6;
+        color: var(--text-muted);
+    }
 
-.result-domain span {
-    font-size: 13px;
-    color: var(--gray);
-}
+    .dm-alert {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: var(--space-4);
+        padding: 11px 14px;
+        border-radius: 8px;
+        font-size: var(--text-sm);
+        line-height: 1.5;
+        color: var(--text-primary);
+        border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+        background: color-mix(in srgb, var(--warning) 10%, transparent);
+    }
 
-.result-domain span.available {
-    color: var(--success);
-}
+    .dm-alert i {
+        margin-top: 2px;
+        color: var(--warning);
+    }
 
-.result-domain span.taken {
-    color: var(--danger);
-}
+    /* ===== Sonuç listesi ===== */
+    .dm-results {
+        border: 1px solid var(--dm-line);
+        border-radius: var(--dm-radius);
+        background: var(--dm-surface);
+        overflow: hidden;
+    }
 
-.result-price {
-    text-align: right;
-}
+    .dm-result {
+        display: grid;
+        grid-template-columns: 26px minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: var(--space-4);
+        padding: var(--space-4) var(--space-5);
+        border-bottom: 1px solid var(--dm-line);
+    }
 
-.result-price .price {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--primary-light);
-}
+    .dm-result:last-child {
+        border-bottom: none;
+    }
 
-.result-price .period {
-    font-size: 13px;
-    color: var(--gray);
-}
+    .dm-result i.dm-state {
+        font-size: 17px;
+    }
 
-/* Domain Pricing */
-.pricing-section {
-    padding: 100px 0;
-    background: var(--dark);
-}
+    .dm-result.is-free i.dm-state {
+        color: var(--success);
+    }
 
-.pricing-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 25px;
-}
+    .dm-result.is-taken i.dm-state {
+        color: var(--text-gray);
+    }
 
-.price-card {
-    background: rgba(255,255,255,0.02);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 30px;
-    text-align: center;
-    transition: all 0.3s ease;
-}
+    .dm-result.is-unknown i.dm-state {
+        color: var(--warning);
+    }
 
-.price-card:hover {
-    border-color: rgba(99, 102, 241, 0.3);
-    transform: translateY(-5px);
-}
+    .dm-result b {
+        display: block;
+        font-size: var(--text-base);
+        font-weight: 600;
+        color: var(--text-primary);
+        word-break: break-all;
+    }
 
-.price-card .extension {
-    font-size: 28px;
-    font-weight: 800;
-    margin-bottom: 15px;
-    color: var(--primary-light);
-}
+    .dm-result span.dm-state-text {
+        display: block;
+        margin-top: 3px;
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+    }
 
-.price-card .amount {
-    font-size: 32px;
-    font-weight: 700;
-    margin-bottom: 5px;
-}
+    .dm-price {
+        text-align: right;
+        white-space: nowrap;
+    }
 
-.price-card .period {
-    font-size: 14px;
-    color: var(--gray);
-    margin-bottom: 20px;
-}
+    .dm-price b {
+        font-size: var(--text-base);
+        font-weight: 700;
+        color: var(--text-primary);
+    }
 
-.price-card .btn {
-    width: 100%;
-}
+    .dm-price span {
+        display: block;
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+    }
 
-/* Features */
-.features-section {
-    padding: 100px 0;
-    background: var(--darker);
-}
+    .dm .dm-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 9px 16px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        font-family: inherit;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
 
-.features-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 30px;
-}
+    /* Sarmalayıcıyla birlikte yazılır: ".dm a { color: inherit }" reseti
+       aksi halde beyaz yazıyı eziyor ve açık temada koyu yazı çıkıyor. */
+    .dm .dm-btn-primary {
+        background: var(--dm-accent);
+        color: #fff;
+    }
 
-.feature-box {
-    text-align: center;
-    padding: 40px 25px;
-}
+    .dm .dm-btn-primary:hover {
+        background: var(--primary-dark);
+    }
 
-.feature-icon {
-    width: 70px;
-    height: 70px;
-    background: var(--gradient-primary);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 20px;
-    font-size: 28px;
-    color: white;
-}
+    .dm .dm-btn-outline {
+        background: transparent;
+        border-color: var(--dm-line);
+        color: var(--text-secondary);
+    }
 
-.feature-box h4 {
-    font-size: 18px;
-    margin-bottom: 12px;
-}
+    .dm .dm-btn-outline:hover {
+        border-color: var(--dm-accent);
+        color: var(--dm-accent);
+    }
 
-.feature-box p {
-    color: var(--gray-light);
-    font-size: 14px;
-    line-height: 1.6;
-}
+    /* ===== Fiyat tablosu ===== */
+    .dm-table-wrap {
+        border: 1px solid var(--dm-line);
+        border-radius: var(--dm-radius);
+        background: var(--dm-surface);
+        overflow-x: auto;
+    }
 
-/* Responsive */
-@media (max-width: 992px) {
-    .pricing-grid { grid-template-columns: repeat(2, 1fr); }
-    .features-grid { grid-template-columns: repeat(2, 1fr); }
-}
+    .dm-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 560px;
+    }
 
-@media (max-width: 768px) {
-    .page-hero h1 { font-size: 36px; }
-    .domain-search-box { flex-direction: column; border-radius: 20px; }
-    .domain-search-box button { width: 100%; border-radius: 15px; }
-    .result-item { flex-direction: column; text-align: center; gap: 20px; }
-}
+    .dm-table th,
+    .dm-table td {
+        padding: 12px var(--space-5);
+        text-align: left;
+        font-size: var(--text-sm);
+        border-bottom: 1px solid var(--border-light);
+    }
 
-@media (max-width: 576px) {
-    .pricing-grid { grid-template-columns: 1fr; }
-    .features-grid { grid-template-columns: 1fr; }
-}
+    .dm-table thead th {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--dm-line);
+        background: color-mix(in srgb, var(--primary) 5%, transparent);
+    }
+
+    .dm-table tbody th {
+        font-weight: 700;
+        color: var(--dm-accent);
+    }
+
+    .dm-table td {
+        color: var(--text-muted);
+    }
+
+    .dm-table td.dm-num {
+        text-align: right;
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+    }
+
+    .dm-table tr:last-child th,
+    .dm-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .dm-empty {
+        padding: var(--space-6);
+        text-align: center;
+        border: 1px dashed var(--dm-line);
+        border-radius: var(--dm-radius);
+        color: var(--text-muted);
+        font-size: var(--text-sm);
+        line-height: 1.6;
+    }
+
+    /* ===== Avantajlar ===== */
+    .dm-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--space-4);
+    }
+
+    .dm-tile {
+        padding: var(--space-4);
+        border: 1px solid var(--dm-line);
+        border-radius: var(--dm-radius);
+        background: var(--bg-body);
+    }
+
+    .dm-tile-icon {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--primary) 10%, transparent);
+        color: var(--dm-accent);
+        font-size: 14px;
+    }
+
+    .dm-tile h4 {
+        margin-bottom: 6px;
+        font-size: var(--text-sm);
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .dm-tile p {
+        font-size: var(--text-xs);
+        line-height: 1.55;
+        color: var(--text-muted);
+    }
+
+    /* ==========================================
+       Açık tema
+       ========================================== */
+    [data-theme="light"] .dm {
+        --dm-line: #d3e2f8;
+        background: #eff5fe;
+    }
+
+    [data-theme="light"] .dm-hero {
+        background: linear-gradient(180deg, #e4edfb 0%, #eff5fe 100%);
+    }
+
+    [data-theme="light"] .dm-section.is-alt {
+        background: #e4edfb;
+    }
+
+    [data-theme="light"] .dm-results,
+    [data-theme="light"] .dm-table-wrap {
+        box-shadow:
+            0 1px 2px rgba(36, 116, 245, 0.05),
+            0 10px 26px -14px rgba(36, 116, 245, 0.28);
+    }
+
+    [data-theme="light"] .dm-tile {
+        background: #fff;
+    }
+
+    @media (max-width: 860px) {
+        .dm-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 640px) {
+        .dm-search {
+            flex-direction: column;
+        }
+
+        .dm .dm-search button {
+            justify-content: center;
+        }
+
+        .dm-result {
+            grid-template-columns: 26px minmax(0, 1fr);
+        }
+
+        .dm-price,
+        .dm-result .dm-btn {
+            grid-column: 2;
+            text-align: left;
+        }
+
+        .dm-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
-<!-- Page Hero -->
-<section class="page-hero">
-    <div class="container">
-        <h1>Domain <span>Kayıt</span> & Transfer</h1>
-        <p>Markanızı koruma altına alın. Binlerce uzantı seçeneği ile hayalinizdeki domain'i şimdi kaydettirin.</p>
-        
-        <form class="domain-search-box" action="domain.php" method="GET">
-            <input type="text" name="query" placeholder="Hayalinizdeki domain adını yazın..." value="<?= htmlspecialchars($query) ?>">
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-search"></i>
-                Sorgula
-            </button>
-        </form>
-    </div>
-</section>
+<div class="dm">
 
-<?php if (!empty($results)): ?>
-<!-- Results -->
-<section class="results-section">
-    <div class="container">
-        <div class="section-header">
-            <h2 class="section-title">"<span><?= htmlspecialchars($query) ?></span>" Sonuçları</h2>
+    <section class="dm-hero">
+        <div class="container">
+            <div class="dm-hero-inner">
+                <span class="dm-eyebrow"><i class="fas fa-link"></i> Alan adı kayıt ve transfer</span>
+                <h1 class="dm-title">Alan adınızı alın</h1>
+                <p class="dm-lead">
+                    Aklınızdaki adı yazın; tanımlı uzantılarda durumunu ve yıllık ücretini görün.
+                </p>
+
+                <form class="dm-search" action="domain.php" method="get">
+                    <input type="text" name="sorgu" value="<?= htmlspecialchars($sorgu) ?>"
+                        placeholder="ornek veya ornek.com.tr" autocomplete="off" spellcheck="false" dir="ltr">
+                    <button type="submit"><i class="fas fa-magnifying-glass"></i> Sorgula</button>
+                </form>
+
+                <?php if (!$apiHazir): ?>
+                    <p class="dm-hint">
+                        Müsaitlik sorgusu için alan adı sağlayıcısı bağlantısı gerekir.
+                        Şu an yalnızca fiyatlar gösteriliyor.
+                    </p>
+                <?php endif; ?>
+            </div>
         </div>
-        
-        <div class="results-list">
-            <?php foreach ($results as $result): ?>
-                <div class="result-item <?= $result['available'] ? 'available' : 'taken' ?>">
-                    <div class="result-domain">
-                        <i class="fas <?= $result['available'] ? 'fa-check-circle' : 'fa-times-circle' ?>"></i>
-                        <div>
-                            <h4><?= htmlspecialchars($result['domain']) ?></h4>
-                            <span class="<?= $result['available'] ? 'available' : 'taken' ?>">
-                                <?= $result['available'] ? 'Müsait' : 'Kayıtlı' ?>
-                            </span>
-                        </div>
+    </section>
+
+    <!-- Sonuçlar -->
+    <?php if ($sorgu !== ''): ?>
+        <section class="dm-section">
+            <div class="container">
+                <div class="dm-head">
+                    <h2>
+                        <?= $ayrik['ad'] !== '' ? '"' . htmlspecialchars($ayrik['ad']) . '" sonuçları' : 'Sonuçlar' ?>
+                    </h2>
+                    <?php if ($sonuclar): ?>
+                        <p><?= count($sonuclar) ?> uzantı listelendi.</p>
+                    <?php endif; ?>
+                </div>
+
+                <?php if ($hata !== ''): ?>
+                    <div class="dm-alert">
+                        <i class="fas fa-circle-exclamation"></i>
+                        <span><?= htmlspecialchars($hata) ?></span>
                     </div>
-                    <div class="result-price">
-                        <?php if ($result['available']): ?>
-                            <div class="price">₺<?= number_format($result['price'], 0) ?></div>
-                            <div class="period">/yıl</div>
-                            <a href="cart.php?add=domain&domain=<?= urlencode($result['domain']) ?>" class="btn btn-primary btn-sm" style="margin-top: 10px;">
-                                <i class="fas fa-cart-plus"></i> Sepete Ekle
-                            </a>
-                        <?php else: ?>
-                            <a href="#" class="btn btn-outline btn-sm">
-                                <i class="fas fa-exchange-alt"></i> Transfer
-                            </a>
-                        <?php endif; ?>
+                <?php elseif (!$apiHazir): ?>
+                    <div class="dm-alert">
+                        <i class="fas fa-circle-info"></i>
+                        <span>Alan adı sağlayıcısı bağlantısı yapılandırılmadığı için müsaitlik kontrol
+                            edilemedi. Aşağıdaki ücretler geçerlidir; kayıt için talep oluşturabilirsiniz.</span>
                     </div>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</section>
-<?php endif; ?>
+                <?php endif; ?>
 
-<!-- Domain Pricing -->
-<section class="pricing-section">
-    <div class="container">
-        <div class="section-header">
-            <span class="section-badge">
-                <i class="fas fa-tags"></i>
-                Fiyatlar
-            </span>
-            <h2 class="section-title">Domain <span>Fiyatları</span></h2>
-            <p class="section-desc">En popüler uzantılar için güncel fiyatlar.</p>
-        </div>
-        
-        <div class="pricing-grid">
-            <div class="price-card">
-                <div class="extension">.com</div>
-                <div class="amount">₺149</div>
-                <div class="period">/yıl</div>
-                <a href="domain.php?query=example" class="btn btn-outline btn-sm">
-                    Kaydet
-                </a>
-            </div>
-            
-            <div class="price-card">
-                <div class="extension">.net</div>
-                <div class="amount">₺179</div>
-                <div class="period">/yıl</div>
-                <a href="domain.php?query=example" class="btn btn-outline btn-sm">
-                    Kaydet
-                </a>
-            </div>
-            
-            <div class="price-card">
-                <div class="extension">.com.tr</div>
-                <div class="amount">₺99</div>
-                <div class="period">/yıl</div>
-                <a href="domain.php?query=example" class="btn btn-outline btn-sm">
-                    Kaydet
-                </a>
-            </div>
-            
-            <div class="price-card">
-                <div class="extension">.io</div>
-                <div class="amount">₺399</div>
-                <div class="period">/yıl</div>
-                <a href="domain.php?query=example" class="btn btn-outline btn-sm">
-                    Kaydet
-                </a>
-            </div>
-        </div>
-    </div>
-</section>
+                <?php if ($sonuclar): ?>
+                    <div class="dm-results">
+                        <?php foreach ($sonuclar as $s):
+                            $durumSinif = match ($s['durum']) {
+                                AlanAdi::MUSAIT => 'is-free',
+                                AlanAdi::KAYITLI => 'is-taken',
+                                default => 'is-unknown',
+                            };
+                            $durumIkon = match ($s['durum']) {
+                                AlanAdi::MUSAIT => 'fa-circle-check',
+                                AlanAdi::KAYITLI => 'fa-circle-xmark',
+                                default => 'fa-circle-question',
+                            };
+                            $durumMetin = match ($s['durum']) {
+                                AlanAdi::MUSAIT => 'Müsait',
+                                AlanAdi::KAYITLI => 'Kayıtlı',
+                                default => 'Müsaitlik kontrol edilemedi',
+                            };
+                            ?>
+                            <div class="dm-result <?= $durumSinif ?>">
+                                <i class="fas <?= $durumIkon ?> dm-state"></i>
 
-<!-- Features -->
-<section class="features-section">
-    <div class="container">
-        <div class="section-header">
-            <span class="section-badge">
-                <i class="fas fa-star"></i>
-                Avantajlar
-            </span>
-            <h2 class="section-title">Domain <span>Hizmetleri</span></h2>
+                                <div>
+                                    <b dir="ltr"><?= htmlspecialchars($s['alan_adi']) ?></b>
+                                    <span class="dm-state-text"><?= $durumMetin ?></span>
+                                </div>
+
+                                <div class="dm-price">
+                                    <?php if ($s['fiyat'] !== null && $s['fiyat'] > 0): ?>
+                                        <b><?= $paraBicim($s['fiyat']) ?></b>
+                                        <span>/yıl</span>
+                                    <?php else: ?>
+                                        <span>Fiyat tanımlı değil</span>
+                                    <?php endif; ?>
+                                </div>
+
+                                <?php if ($s['durum'] === AlanAdi::KAYITLI): ?>
+                                    <a href="contact.php#iletisim-formu" class="dm-btn dm-btn-outline">
+                                        <i class="fas fa-right-left"></i> Transfer et
+                                    </a>
+                                <?php elseif ($s['fiyat'] !== null && $s['fiyat'] > 0): ?>
+                                    <a href="cart.php?domain=<?= urlencode($s['alan_adi']) ?>"
+                                        class="dm-btn dm-btn-primary">
+                                        <i class="fas fa-cart-plus"></i> Sepete ekle
+                                    </a>
+                                <?php else: ?>
+                                    <a href="contact.php#iletisim-formu" class="dm-btn dm-btn-outline">
+                                        <i class="fas fa-envelope"></i> Fiyat sor
+                                    </a>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </section>
+    <?php endif; ?>
+
+    <!-- Fiyat listesi -->
+    <section class="dm-section <?= $sorgu !== '' ? 'is-alt' : '' ?>">
+        <div class="container">
+            <div class="dm-head">
+                <h2>Uzantı ücretleri</h2>
+                <p>Yıllık kayıt, yenileme ve transfer ücretleri. Tutarlara KDV dâhil değildir.</p>
+            </div>
+
+            <?php if (!$uzantilar): ?>
+                <div class="dm-empty">
+                    Uzantı fiyatları henüz tanımlanmadı.<br>
+                    Fiyat listesi girildiğinde bu bölüm otomatik olarak dolar.
+                </div>
+            <?php else: ?>
+                <div class="dm-table-wrap">
+                    <table class="dm-table">
+                        <thead>
+                            <tr>
+                                <th>Uzantı</th>
+                                <th style="text-align: right;">Kayıt / yıl</th>
+                                <th style="text-align: right;">Yenileme / yıl</th>
+                                <th style="text-align: right;">Transfer</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($uzantilar as $u): ?>
+                                <tr>
+                                    <th dir="ltr"><?= htmlspecialchars($u['uzanti']) ?></th>
+                                    <td class="dm-num"><?= $u['kayit'] > 0 ? $paraBicim($u['kayit']) : '—' ?></td>
+                                    <td class="dm-num"><?= $u['yenileme'] > 0 ? $paraBicim($u['yenileme']) : '—' ?></td>
+                                    <td class="dm-num"><?= $u['transfer'] > 0 ? $paraBicim($u['transfer']) : '—' ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
         </div>
-        
-        <div class="features-grid">
-            <div class="feature-box">
-                <div class="feature-icon">
-                    <i class="fas fa-shield-alt"></i>
-                </div>
-                <h4>WHOIS Koruması</h4>
-                <p>Kişisel bilgilerinizi gizli tutun.</p>
+    </section>
+
+    <!-- Avantajlar -->
+    <section class="dm-section <?= $sorgu !== '' ? '' : 'is-alt' ?>">
+        <div class="container">
+            <div class="dm-head">
+                <h2>Her alan adında standart</h2>
             </div>
-            
-            <div class="feature-box">
-                <div class="feature-icon">
-                    <i class="fas fa-lock"></i>
-                </div>
-                <h4>Transfer Kilidi</h4>
-                <p>Yetkisiz transferlere karşı koruma.</p>
-            </div>
-            
-            <div class="feature-box">
-                <div class="feature-icon">
-                    <i class="fas fa-sync-alt"></i>
-                </div>
-                <h4>Otomatik Yenileme</h4>
-                <p>Domain'inizi asla kaybetmeyin.</p>
-            </div>
-            
-            <div class="feature-box">
-                <div class="feature-icon">
-                    <i class="fas fa-headset"></i>
-                </div>
-                <h4>7/24 Destek</h4>
-                <p>Her zaman yanınızdayız.</p>
+
+            <div class="dm-grid">
+                <?php foreach ($avantajlar as [$ikon, $baslik, $metin]): ?>
+                    <div class="dm-tile">
+                        <div class="dm-tile-icon"><i class="fas <?= htmlspecialchars($ikon) ?>"></i></div>
+                        <h4><?= htmlspecialchars($baslik) ?></h4>
+                        <p><?= htmlspecialchars($metin) ?></p>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
-    </div>
-</section>
+    </section>
+
+</div>
 
 <?php require_once __DIR__ . '/theme/includes/footer.php'; ?>

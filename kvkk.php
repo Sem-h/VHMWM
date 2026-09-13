@@ -117,7 +117,13 @@ require_once __DIR__ . '/theme/includes/header.php';
     <div class="container">
         <div class="legal-content">
             <div class="last-updated">
-                <i class="fas fa-calendar-alt"></i> Son güncelleme: <?= date('d.m.Y') ?>
+                <?php
+                // Tarih ayarlardan gelir; metin değişmediği sürece sabit kalır.
+                $yururluk = trim((string) Settings::get('kvkk_yururluk', ''));
+                ?>
+                <i class="fas fa-calendar-alt"></i>
+                Yürürlük tarihi:
+                <?= $yururluk !== '' ? htmlspecialchars(date('d.m.Y', strtotime($yururluk))) : '—' ?>
             </div>
 
             <h2>1. Veri Sorumlusu</h2>

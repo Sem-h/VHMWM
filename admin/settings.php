@@ -859,6 +859,37 @@ include 'includes/header.php';
                         <textarea name="settings[company_address]" class="form-control" rows="3"
                             placeholder="Şirket adresi..."><?= htmlspecialchars($settings['company_address'] ?? '') ?></textarea>
                     </div>
+                    <div class="form-group full-width">
+                        <label><span class="label-icon">⚖️</span> Yasal Unvan</label>
+                        <input type="text" name="settings[company_legal_name]" class="form-control"
+                            value="<?= htmlspecialchars($settings['company_legal_name'] ?? '') ?>"
+                            placeholder="Ticaret sicilindeki tam unvan">
+                        <small>Sözleşme metinlerinde satıcı olarak bu unvan yazılır. Boşsa şirket adı kullanılır.</small>
+                    </div>
+                    <div class="form-group">
+                        <label><span class="label-icon">🏦</span> Vergi Dairesi</label>
+                        <input type="text" name="settings[company_tax_office]" class="form-control"
+                            value="<?= htmlspecialchars($settings['company_tax_office'] ?? '') ?>"
+                            placeholder="Örn: Nilüfer">
+                    </div>
+                    <div class="form-group">
+                        <label><span class="label-icon">🔢</span> Vergi Numarası</label>
+                        <input type="text" name="settings[company_tax_number]" class="form-control"
+                            value="<?= htmlspecialchars($settings['company_tax_number'] ?? '') ?>"
+                            placeholder="10 haneli">
+                    </div>
+                    <div class="form-group">
+                        <label><span class="label-icon">🆔</span> MERSİS Numarası</label>
+                        <input type="text" name="settings[company_mersis]" class="form-control"
+                            value="<?= htmlspecialchars($settings['company_mersis'] ?? '') ?>"
+                            placeholder="16 haneli">
+                    </div>
+                    <div class="form-group">
+                        <label><span class="label-icon">📋</span> Ticaret Sicil No</label>
+                        <input type="text" name="settings[company_trade_registry]" class="form-control"
+                            value="<?= htmlspecialchars($settings['company_trade_registry'] ?? '') ?>"
+                            placeholder="Örn: Bursa / 12345">
+                    </div>
                 </div>
             </div>
         </div>

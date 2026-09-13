@@ -32,6 +32,67 @@ function getUniqueCategories()
     return $all;
 }
 
+/**
+ * Referans logosunu uploads/referanslar altına kaydeder.
+ *
+ * Tür istemcinin bildirdiği MIME'a göre değil, dosyanın kendisine
+ * bakılarak belirlenir. SVG içinde betik ya da olay özniteliği varsa
+ * dosya reddedilir.
+ *
+ * @return array{yol: string, hata: string}
+ */
+function referansLogoYukle(?array $dosya): array
+{
+    if (!$dosya || ($dosya['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return ['yol' => '', 'hata' => ''];
+    }
+    if ($dosya['error'] !== UPLOAD_ERR_OK) {
+        return ['yol' => '', 'hata' => 'Dosya yüklenemedi (kod ' . $dosya['error'] . ').'];
+    }
+    if ($dosya['size'] > 2 * 1024 * 1024) {
+        return ['yol' => '', 'hata' => 'Logo en fazla 2 MB olabilir.'];
+    }
+
+    $gecici = $dosya['tmp_name'];
+    $uzanti = '';
+
+    $boyut = @getimagesize($gecici);
+    if ($boyut !== false) {
+        $uzanti = match ($boyut[2]) {
+            IMAGETYPE_PNG => 'png',
+            IMAGETYPE_JPEG => 'jpg',
+            IMAGETYPE_GIF => 'gif',
+            IMAGETYPE_WEBP => 'webp',
+            default => '',
+        };
+    } else {
+        // SVG: metin dosyası, getimagesize tanımaz
+        $icerik = (string) file_get_contents($gecici);
+        if (stripos($icerik, '<svg') !== false) {
+            if (preg_match('/<script|javascript:|\son\w+\s*=|<foreignObject/i', $icerik)) {
+                return ['yol' => '', 'hata' => 'SVG dosyası betik içeriyor, kabul edilmedi.'];
+            }
+            $uzanti = 'svg';
+        }
+    }
+
+    if ($uzanti === '') {
+        return ['yol' => '', 'hata' => 'Yalnızca PNG, JPG, GIF, WEBP veya SVG yüklenebilir.'];
+    }
+
+    $klasor = dirname(__DIR__) . '/uploads/referanslar';
+    if (!is_dir($klasor) && !mkdir($klasor, 0775, true) && !is_dir($klasor)) {
+        return ['yol' => '', 'hata' => 'Yükleme klasörü oluşturulamadı.'];
+    }
+
+    $ad = 'referans-' . bin2hex(random_bytes(8)) . '.' . $uzanti;
+    if (!move_uploaded_file($gecici, $klasor . '/' . $ad)) {
+        return ['yol' => '', 'hata' => 'Dosya kaydedilemedi.'];
+    }
+
+    return ['yol' => 'uploads/referanslar/' . $ad, 'hata' => ''];
+}
+
 // İşlemler (Silme, Ekleme, Güncelleme)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['delete'])) {
     $db = Database::getInstance();
@@ -44,6 +105,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['delete'])) {
             $id = (int) ($_POST['id'] ?? 0);
             $name = trim($_POST['name'] ?? '');
             $logo = trim($_POST['logo'] ?? '');
+
+            // Dosya yüklendiyse adres yerine yerel kopya kullanılır
+            $yuklenen = referansLogoYukle($_FILES['logo_dosya'] ?? null);
+            if ($yuklenen['hata'] !== '') {
+                throw new RuntimeException($yuklenen['hata']);
+            }
+            if ($yuklenen['yol'] !== '') {
+                $logo = $yuklenen['yol'];
+            }
             $website = trim($_POST['website'] ?? '');
             $category = trim($_POST['category'] ?? '');
             $description = trim($_POST['description'] ?? '');
@@ -65,7 +135,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['delete'])) {
         header('Location: references.php');
         exit;
     } catch (Exception $e) {
-        $error = $e->getMessage();
+        // Hata da ekrana çıksın: eskiden $error atanıyor ama hiç basılmıyordu,
+        // yükleme başarısız olduğunda kullanıcı sebebini göremiyordu.
+        $_SESSION['flash_message'] = ['type' => 'error', 'text' => $e->getMessage()];
+        header('Location: references.php');
+        exit;
     }
 }
 
@@ -504,10 +578,11 @@ body {
     <?php if (isset($_SESSION['flash_message'])):
         $msg = $_SESSION['flash_message'];
         unset($_SESSION['flash_message']); ?>
-            <div class="alert alert-success mb-4 d-flex align-items-center gap-3 shadow-sm bg-white border-0" 
-                 style="border-left: 5px solid #10b981; border-radius: 12px;">
-                <i class="fas fa-check-circle text-success fs-4"></i>
-                <strong><?= $msg['text'] ?></strong>
+            <?php $hataMi = ($msg['type'] ?? 'success') === 'error'; ?>
+            <div class="alert mb-4 d-flex align-items-center gap-3 shadow-sm bg-white border-0"
+                 style="border-left: 5px solid <?= $hataMi ? '#ef4444' : '#10b981' ?>; border-radius: 12px;">
+                <i class="fas <?= $hataMi ? 'fa-circle-exclamation text-danger' : 'fa-check-circle text-success' ?> fs-4"></i>
+                <strong><?= htmlspecialchars((string) $msg['text']) ?></strong>
             </div>
     <?php endif; ?>
 
@@ -601,7 +676,7 @@ body {
         <button onclick="togglePanel()" class="btn btn-light rounded-circle"><i class="fas fa-times"></i></button>
     </div>
     <div class="panel-body">
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <?php if ($editData): ?>
                     <input type="hidden" name="id" value="<?= $editData['id'] ?>">
             <?php endif; ?>
@@ -612,9 +687,20 @@ body {
             </div>
 
             <div class="mb-4">
-                <label class="label-bold">Logo URL</label>
-                <input type="text" name="logo" class="form-input" placeholder="Resim linki..." value="<?= htmlspecialchars($editData['logo'] ?? '') ?>">
-                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> PNG veya SVG önerilir.</small>
+                <label class="label-bold">Logo dosyası</label>
+                <input type="file" name="logo_dosya" class="form-input"
+                    accept=".png,.jpg,.jpeg,.gif,.webp,.svg">
+                <small class="text-muted d-block mt-2">
+                    <i class="fas fa-info-circle"></i>
+                    PNG, JPG, GIF, WEBP veya SVG &mdash; en fazla 2 MB. Dosya sunucuya kaydedilir;
+                    dış siteden çekilen logo kaynak site değişince kırılır.
+                </small>
+            </div>
+
+            <div class="mb-4">
+                <label class="label-bold">Logo adresi</label>
+                <input type="text" name="logo" class="form-input" placeholder="uploads/referanslar/... veya https://..." value="<?= htmlspecialchars($editData['logo'] ?? '') ?>">
+                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> Dosya yüklerseniz bu alan otomatik güncellenir.</small>
             </div>
 
             <div class="row mb-4">

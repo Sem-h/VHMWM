@@ -568,6 +568,24 @@ CREATE TABLE `hizmet_sokaklari` (
   CONSTRAINT `fk_sokak_mahalle` FOREIGN KEY (`mahalle_id`) REFERENCES `hizmet_mahalleleri` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=518 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `iletisim_mesajlari`;
+
+CREATE TABLE `iletisim_mesajlari` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `ad_soyad` varchar(120) NOT NULL,
+  `email` varchar(150) NOT NULL,
+  `telefon` varchar(30) DEFAULT NULL,
+  `konu` varchar(180) NOT NULL,
+  `mesaj` text NOT NULL,
+  `ip` varchar(45) DEFAULT NULL,
+  `user_agent` varchar(255) DEFAULT NULL,
+  `durum` enum('yeni','okundu','yanitlandi','kapandi') NOT NULL DEFAULT 'yeni',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `k_durum` (`durum`),
+  KEY `k_tarih` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `integration_logs`;
 
 CREATE TABLE `integration_logs` (
@@ -636,6 +654,43 @@ CREATE TABLE `invoices` (
   CONSTRAINT `invoices_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `kb_kategoriler`;
+
+CREATE TABLE `kb_kategoriler` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `ad` varchar(80) NOT NULL,
+  `slug` varchar(90) NOT NULL,
+  `ikon` varchar(40) NOT NULL DEFAULT 'fa-book',
+  `aciklama` varchar(200) DEFAULT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `u_slug` (`slug`)
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `kb_makaleler`;
+
+CREATE TABLE `kb_makaleler` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `kategori_id` int(10) unsigned NOT NULL,
+  `baslik` varchar(180) NOT NULL,
+  `slug` varchar(200) NOT NULL,
+  `ozet` varchar(300) DEFAULT NULL,
+  `icerik` mediumtext NOT NULL,
+  `goruntulenme` int(10) unsigned NOT NULL DEFAULT 0,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `u_slug` (`slug`),
+  KEY `k_kategori` (`kategori_id`),
+  KEY `k_aktif` (`is_active`),
+  FULLTEXT KEY `f_arama` (`baslik`,`ozet`,`icerik`),
+  CONSTRAINT `fk_kb_makale_kategori` FOREIGN KEY (`kategori_id`) REFERENCES `kb_kategoriler` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `kesif_talepleri`;
 
 CREATE TABLE `kesif_talepleri` (
@@ -678,6 +733,41 @@ CREATE TABLE `languages` (
   UNIQUE KEY `uq_code` (`code`),
   KEY `idx_aktif` (`is_active`,`sort_order`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `marka_tescil_talepleri`;
+
+CREATE TABLE `marka_tescil_talepleri` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `ad_soyad` varchar(120) NOT NULL,
+  `telefon` varchar(30) NOT NULL,
+  `email` varchar(150) DEFAULT NULL,
+  `marka_adi` varchar(150) NOT NULL,
+  `siniflar` varchar(120) DEFAULT NULL,
+  `not_metni` text DEFAULT NULL,
+  `ip` varchar(45) DEFAULT NULL,
+  `user_agent` varchar(255) DEFAULT NULL,
+  `durum` enum('yeni','arastiriliyor','teklif_verildi','basvuruldu','kapandi') NOT NULL DEFAULT 'yeni',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `k_durum` (`durum`),
+  KEY `k_tarih` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `marka_ucretleri`;
+
+CREATE TABLE `marka_ucretleri` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `kod` varchar(40) NOT NULL,
+  `tur` enum('hizmet','harc') NOT NULL DEFAULT 'harc',
+  `baslik` varchar(120) NOT NULL,
+  `aciklama` varchar(200) DEFAULT NULL,
+  `tutar` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `u_kod` (`kod`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `menu_items`;
 
@@ -960,7 +1050,7 @@ CREATE TABLE `promotions` (
   KEY `idx_code` (`code`),
   KEY `idx_active` (`is_active`),
   KEY `idx_dates` (`start_date`,`end_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `proposal_items`;
 
@@ -1010,7 +1100,7 @@ CREATE TABLE `references` (
   KEY `idx_active` (`is_active`),
   KEY `idx_category` (`category`),
   KEY `idx_sort` (`sort_order`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `server_groups`;
 
@@ -1112,7 +1202,49 @@ CREATE TABLE `settings` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `setting_key` (`setting_key`),
   KEY `idx_group` (`setting_group`)
-) ENGINE=InnoDB AUTO_INCREMENT=270 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=282 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `sla_hizmetleri`;
+
+CREATE TABLE `sla_hizmetleri` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `kod` varchar(40) NOT NULL,
+  `ad` varchar(80) NOT NULL,
+  `aciklama` varchar(200) DEFAULT NULL,
+  `uptime` decimal(6,3) NOT NULL DEFAULT 99.900,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `u_kod` (`kod`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `sla_kredileri`;
+
+CREATE TABLE `sla_kredileri` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `hizmet_id` int(10) unsigned NOT NULL,
+  `alt_sinir` decimal(6,3) NOT NULL,
+  `ust_sinir` decimal(6,3) NOT NULL,
+  `kredi` int(11) NOT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `k_hizmet` (`hizmet_id`),
+  CONSTRAINT `fk_sla_kredi_hizmet` FOREIGN KEY (`hizmet_id`) REFERENCES `sla_hizmetleri` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `sla_yanit_sureleri`;
+
+CREATE TABLE `sla_yanit_sureleri` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `kod` varchar(40) NOT NULL,
+  `ad` varchar(80) NOT NULL,
+  `aciklama` varchar(200) DEFAULT NULL,
+  `dakika` int(11) NOT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `u_kod` (`kod`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `ssl_certificates`;
 

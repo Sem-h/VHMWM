@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/Database.php';
+require_once __DIR__ . '/includes/Settings.php';
 
 session_name(SESSION_NAME);
 session_start();
@@ -113,7 +114,13 @@ require_once __DIR__ . '/theme/includes/header.php';
     <div class="container">
         <div class="legal-content">
             <div class="last-updated">
-                <i class="fas fa-calendar-alt"></i> Son güncelleme: <?= date('d.m.Y') ?>
+                <?php
+                // Tarih ayarlardan gelir; metin değişmediği sürece sabit kalır.
+                $yururluk = trim((string) Settings::get('privacy_yururluk', ''));
+                ?>
+                <i class="fas fa-calendar-alt"></i>
+                Yürürlük tarihi:
+                <?= $yururluk !== '' ? htmlspecialchars(date('d.m.Y', strtotime($yururluk))) : '—' ?>
             </div>
 
             <h2>1. Toplanan Veriler</h2>

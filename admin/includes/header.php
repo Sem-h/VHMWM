@@ -613,6 +613,10 @@ if (isset($_GET['logout'])) {
                     <a href="<?= $adminPath ?>domains.php" class="menu-item <?= ($currentPage ?? '') === 'domains' ? 'active' : '' ?>">
                         <span class="icon">🌐</span> Alan Adları
                     </a>
+                    <a href="<?= $adminPath ?>domain-fiyatlari.php"
+                        class="menu-item <?= ($currentPage ?? '') === 'domain-fiyatlari' ? 'active' : '' ?>">
+                        <span class="icon">🏷️</span> Alan Adı Fiyatları
+                    </a>
                 </div>
             </div>
 
@@ -627,6 +631,22 @@ if (isset($_GET['logout'])) {
             <a href="<?= $adminPath ?>kesif-talepleri.php"
                 class="menu-item <?= ($currentPage ?? '') === 'kesif-talepleri' ? 'active' : '' ?>">
                 <span class="icon">📍</span> Keşif Talepleri
+            </a>
+            <a href="<?= $adminPath ?>iletisim-mesajlari.php"
+                class="menu-item <?= ($currentPage ?? '') === 'iletisim-mesajlari' ? 'active' : '' ?>">
+                <span class="icon">✉️</span> İletişim Mesajları
+            </a>
+            <a href="<?= $adminPath ?>marka-talepleri.php"
+                class="menu-item <?= ($currentPage ?? '') === 'marka-talepleri' ? 'active' : '' ?>">
+                <span class="icon">®️</span> Marka Tescil Talepleri
+            </a>
+            <a href="<?= $adminPath ?>sla.php"
+                class="menu-item <?= ($currentPage ?? '') === 'sla' ? 'active' : '' ?>">
+                <span class="icon">📄</span> SLA Yönetimi
+            </a>
+            <a href="<?= $adminPath ?>bilgi-bankasi.php"
+                class="menu-item <?= ($currentPage ?? '') === 'bilgi-bankasi' ? 'active' : '' ?>">
+                <span class="icon">📚</span> Bilgi Bankası
             </a>
             <a href="<?= $adminPath ?>hizmet-bolgeleri.php"
                 class="menu-item <?= ($currentPage ?? '') === 'hizmet-bolgeleri' ? 'active' : '' ?>">

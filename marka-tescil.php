@@ -1,966 +1,1114 @@
 <?php
 /**
- * WHMVM - Marka Tescil Sayfası (Verimek Benzeri)
+ * VHM - Marka Tescil Sayfası
+ *
+ * Ücretsiz araştırma formu marka_tescil_talepleri tablosuna yazılır.
+ * Hizmet bedeli ve Türk Patent harçları marka_ucretleri tablosundan gelir;
+ * sayfaya sabit tutar yazılmaz. Tablo boşsa fiyat bölümü basılmaz.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/Database.php';
+require_once __DIR__ . '/includes/Settings.php';
 
 session_name(SESSION_NAME);
 session_start();
 
-$pageTitle = 'Marka Tescil | Markanızı Koruma Altına Alın';
-$pageDescription = 'Profesyonel marka tescil hizmeti. Ücretsiz marka araştırması, Türk Patent başvurusu.';
+$pageTitle = 'Marka Tescil';
+$pageDescription = 'Ücretsiz marka ön araştırması ve Türk Patent ve Marka Kurumu nezdinde marka tescil başvurusu.';
+
+/* ---------- Nice sınıfları: hem form hem kart listesi aynı kaynaktan ---------- */
+$siniflar = [
+    ['no' => 9, 'ad' => 'Yazılım & Elektronik', 'ikon' => 'fa-laptop-code', 'aciklama' => 'Bilgisayar yazılımları, mobil uygulamalar, elektronik cihazlar.'],
+    ['no' => 35, 'ad' => 'Ticaret & Reklam', 'ikon' => 'fa-bullhorn', 'aciklama' => 'Reklamcılık, iş yönetimi, ticari işletme yönetimi.'],
+    ['no' => 38, 'ad' => 'Telekomünikasyon', 'ikon' => 'fa-satellite-dish', 'aciklama' => 'Haberleşme hizmetleri, internet, veri iletimi.'],
+    ['no' => 41, 'ad' => 'Eğitim & Eğlence', 'ikon' => 'fa-graduation-cap', 'aciklama' => 'Eğitim hizmetleri, spor ve kültürel faaliyetler.'],
+    ['no' => 42, 'ad' => 'Bilimsel Hizmetler', 'ikon' => 'fa-flask', 'aciklama' => 'Teknolojik hizmetler, araştırma, yazılım tasarımı.'],
+    ['no' => 43, 'ad' => 'Yiyecek & İçecek', 'ikon' => 'fa-utensils', 'aciklama' => 'Restoran, kafe, otel ve konaklama hizmetleri.'],
+    ['no' => 25, 'ad' => 'Giyim & Tekstil', 'ikon' => 'fa-shirt', 'aciklama' => 'Giysiler, ayakkabılar, tekstil ürünleri.'],
+    ['no' => 3, 'ad' => 'Kozmetik', 'ikon' => 'fa-spray-can', 'aciklama' => 'Parfümler, kozmetikler, temizlik maddeleri.'],
+    ['no' => 30, 'ad' => 'Gıda Ürünleri', 'ikon' => 'fa-cookie-bite', 'aciklama' => 'Kahve, çay, şeker, unlu mamüller, şekerlemeler.'],
+];
+$gecerliSinif = array_column($siniflar, 'no');
+
+/* ---------- Ücretler ---------- */
+$ucretler = [];
+try {
+    foreach (Database::fetchAll("SELECT * FROM marka_ucretleri WHERE is_active = 1 ORDER BY sort_order") as $u) {
+        $ucretler[$u['kod']] = $u;
+    }
+} catch (Throwable $e) {
+    error_log('Marka ücretleri okunamadı: ' . $e->getMessage());
+}
+
+$tutar = static fn(string $kod): float => isset($ucretler[$kod]) ? (float) $ucretler[$kod]['tutar'] : 0.0;
+
+$hizmetBedeli = $tutar('hizmet_bedeli');
+$basvuruHarci = $tutar('basvuru_harci');
+$ekSinifHarci = $tutar('ek_sinif_harci');
+
+/* Özet ancak hizmet bedeli ve başvuru harcı biliniyorsa hesaplanır */
+$ozetVar = $hizmetBedeli > 0 && $basvuruHarci > 0;
+
+$harclar = array_filter($ucretler, static fn(array $u): bool => $u['tur'] === 'harc');
+$gecerlilik = trim((string) Settings::get('marka_harc_gecerlilik', ''));
+
+/* ---------- CSRF ---------- */
+if (empty($_SESSION['marka_token'])) {
+    $_SESSION['marka_token'] = bin2hex(random_bytes(32));
+}
+
+/* ---------- Form ---------- */
+$hatalar = [];
+$eski = ['ad_soyad' => '', 'telefon' => '', 'email' => '', 'marka_adi' => '', 'not_metni' => ''];
+$secili = [];
+$sonuc = '';
+$sonucTipi = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $kirp = static fn(string $alan, int $uzunluk): string =>
+        mb_substr(trim((string) ($_POST[$alan] ?? '')), 0, $uzunluk);
+
+    $eski = [
+        'ad_soyad' => $kirp('ad_soyad', 120),
+        'telefon' => $kirp('telefon', 30),
+        'email' => $kirp('email', 150),
+        'marka_adi' => $kirp('marka_adi', 150),
+        'not_metni' => $kirp('not_metni', 1000),
+    ];
+
+    /* Sınıflar: yalnızca listedekiler kabul edilir */
+    $gelen = (array) ($_POST['siniflar'] ?? []);
+    $secili = array_values(array_intersect(array_map('intval', $gelen), $gecerliSinif));
+
+    if (!hash_equals((string) $_SESSION['marka_token'], (string) ($_POST['token'] ?? ''))) {
+        $hatalar['genel'] = 'Oturum doğrulaması başarısız. Sayfayı yenileyip tekrar deneyin.';
+    } elseif (trim((string) ($_POST['website'] ?? '')) !== '') {
+        /* Bot tuzağı */
+        $_SESSION['marka_sonuc'] = ['tip' => 'success', 'metin' => 'Talebiniz alındı. En kısa sürede dönüş yapacağız.'];
+        header('Location: marka-tescil.php#arastirma');
+        exit;
+    } elseif (!empty($_SESSION['marka_son']) && (time() - (int) $_SESSION['marka_son']) < 30) {
+        $hatalar['genel'] = 'Az önce bir talep gönderdiniz. Lütfen yarım dakika bekleyin.';
+    }
+
+    if (!$hatalar) {
+        if (mb_strlen($eski['ad_soyad']) < 3) {
+            $hatalar['ad_soyad'] = 'Ad soyad en az 3 karakter olmalı.';
+        }
+        $rakam = preg_replace('/\D+/', '', $eski['telefon']) ?? '';
+        if (strlen($rakam) < 10 || strlen($rakam) > 11) {
+            $hatalar['telefon'] = 'Telefonu 10 haneli yazın (örn. 532 123 45 67).';
+        }
+        if ($eski['email'] !== '' && !filter_var($eski['email'], FILTER_VALIDATE_EMAIL)) {
+            $hatalar['email'] = 'E-posta adresi geçerli görünmüyor.';
+        }
+        if (mb_strlen($eski['marka_adi']) < 2) {
+            $hatalar['marka_adi'] = 'Araştırılacak marka adını yazın.';
+        }
+        if (!$secili) {
+            $hatalar['siniflar'] = 'En az bir sınıf seçin.';
+        }
+    }
+
+    if (!$hatalar) {
+        $kaydedildi = false;
+        try {
+            Database::insert('marka_tescil_talepleri', [
+                'ad_soyad' => $eski['ad_soyad'],
+                'telefon' => $eski['telefon'],
+                'email' => $eski['email'] !== '' ? $eski['email'] : null,
+                'marka_adi' => $eski['marka_adi'],
+                'siniflar' => implode(',', $secili),
+                'not_metni' => $eski['not_metni'] !== '' ? $eski['not_metni'] : null,
+                'ip' => mb_substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+                'user_agent' => mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
+            ]);
+            $kaydedildi = true;
+        } catch (Throwable $e) {
+            error_log('Marka tescil talebi kaydedilemedi: ' . $e->getMessage());
+        }
+
+        /* Bildirim - gönderilemezse kayıt yine de durur */
+        $bildirimAdresi = trim((string) Settings::get('company_email', ''));
+        if ($kaydedildi && $bildirimAdresi !== '') {
+            try {
+                require_once __DIR__ . '/includes/Mail.php';
+                $govde = '<p><strong>Marka:</strong> ' . htmlspecialchars($eski['marka_adi']) . '</p>'
+                    . '<p><strong>Sınıflar:</strong> ' . htmlspecialchars(implode(', ', $secili)) . '</p>'
+                    . '<p><strong>Ad soyad:</strong> ' . htmlspecialchars($eski['ad_soyad']) . '</p>'
+                    . '<p><strong>Telefon:</strong> ' . htmlspecialchars($eski['telefon']) . '</p>'
+                    . ($eski['email'] !== '' ? '<p><strong>E-posta:</strong> ' . htmlspecialchars($eski['email']) . '</p>' : '')
+                    . ($eski['not_metni'] !== '' ? '<hr><p>' . nl2br(htmlspecialchars($eski['not_metni'])) . '</p>' : '');
+                Mail::send($bildirimAdresi, 'Marka araştırma talebi: ' . $eski['marka_adi'], $govde);
+            } catch (Throwable $e) {
+                error_log('Marka tescil bildirimi gönderilemedi: ' . $e->getMessage());
+            }
+        }
+
+        $_SESSION['marka_son'] = time();
+        $_SESSION['marka_sonuc'] = $kaydedildi
+            ? ['tip' => 'success', 'metin' => 'Araştırma talebiniz bize ulaştı. Uzmanımız en kısa sürede dönüş yapacak.']
+            : ['tip' => 'error', 'metin' => 'Talep kaydedilemedi. Lütfen telefonla ulaşın.'];
+
+        header('Location: marka-tescil.php#arastirma');
+        exit;
+    }
+
+    $sonuc = $hatalar['genel'] ?? 'Formda düzeltilmesi gereken alanlar var.';
+    $sonucTipi = 'error';
+}
+
+if (!empty($_SESSION['marka_sonuc'])) {
+    $sonuc = (string) $_SESSION['marka_sonuc']['metin'];
+    $sonucTipi = (string) $_SESSION['marka_sonuc']['tip'];
+    unset($_SESSION['marka_sonuc']);
+}
+
+/* Süreç adımları ve avantajlar */
+$adimlar = [
+    ['Ön araştırma', 'Marka adınız Türk Patent veri tabanında taranır, benzer kayıtlar raporlanır.'],
+    ['Başvuru', 'Seçilen sınıflarla başvuru Türk Patent ve Marka Kurumu\'na iletilir.'],
+    ['İnceleme', 'Kurum mutlak ret nedenleri yönünden başvuruyu inceler.'],
+    ['Bülten yayını', 'Başvuru Resmî Marka Bülteni\'nde yayımlanır; iki ay itiraz süresi işler.'],
+    ['Tescil belgesi', 'İtiraz gelmezse tescil harcı yatırılır ve belge düzenlenir.'],
+];
+
+$avantajlar = [
+    ['fa-shield-halved', 'Hukuki koruma', 'Tescilli marka, izinsiz kullanıma karşı yasal dayanak sağlar.'],
+    ['fa-globe', '.com.tr alan adı', 'Tescil belgesi, .com.tr uzantılı alan adı başvurusunda belge yerine geçer.'],
+    ['fa-ban', 'Taklide karşı işlem', 'Benzer başvurulara itiraz edebilir, taklit ürünlere işlem başlatabilirsiniz.'],
+    ['fa-right-left', 'Devir ve lisans', 'Markanızı devredebilir, lisans vererek gelir elde edebilirsiniz.'],
+    ['fa-earth-americas', 'Uluslararası başvuru', 'Madrid Protokolü ile yurt dışı tesciline temel oluşturur.'],
+    ['fa-calendar-check', '10 yıl koruma', 'Koruma süresi on yıldır ve süresiz olarak yenilenebilir.'],
+];
 
 require_once __DIR__ . '/theme/includes/header.php';
 ?>
 
 <style>
-    /* Hero Section - Verimek Style */
-    .marka-hero {
-        background: linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%);
-        padding: 100px 0 60px;
+    /* ==========================================
+       Marka Tescil - mt
+       Tüm renkler tasarım değişkenlerinden gelir;
+       sayfa açık ve koyu temada aynı dili konuşur.
+       ========================================== */
+    .mt {
+        --mt-line: var(--border-color);
+        --mt-surface: var(--bg-primary);
+        --mt-accent: var(--primary);
+        --mt-radius: 10px;
+    }
+
+    .mt a {
+        color: inherit;
+    }
+
+    /* ===== Üst bilgi: ortalanmış tek kolon ===== */
+    .mt-hero {
         position: relative;
         overflow: hidden;
+        background: var(--gradient-hero);
+        border-bottom: 1px solid var(--mt-line);
+        padding: var(--space-7) 0;
     }
 
-    .marka-hero::before {
+    .mt-hero::before {
         content: '';
         position: absolute;
-        top: 0;
-        right: 0;
-        width: 50%;
-        height: 100%;
-        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="80" cy="20" r="40" fill="rgba(99,102,241,0.1)"/></svg>');
-        background-size: cover;
+        inset: 0;
+        background:
+            radial-gradient(ellipse 55% 50% at 15% 25%, color-mix(in srgb, var(--primary) 16%, transparent) 0%, transparent 62%),
+            radial-gradient(ellipse 45% 45% at 85% 10%, color-mix(in srgb, var(--secondary) 12%, transparent) 0%, transparent 58%);
+        pointer-events: none;
     }
 
-    .marka-hero .container {
+    .mt-hero>.container {
         position: relative;
         z-index: 1;
     }
 
-    .marka-hero h1 {
-        font-size: 42px;
-        font-weight: 800;
-        margin-bottom: 20px;
-        color: white;
-    }
-
-    .marka-hero p {
-        font-size: 16px;
-        color: rgba(255, 255, 255, 0.8);
-        max-width: 600px;
-        line-height: 1.7;
-        margin-bottom: 40px;
-    }
-
-    /* Stats */
-    .hero-stats {
-        display: flex;
-        gap: 50px;
-    }
-
-    .stat-item {
+    .mt-hero-inner {
+        max-width: 700px;
+        margin: 0 auto;
         text-align: center;
     }
 
-    .stat-number {
-        font-size: 42px;
-        font-weight: 800;
-        color: #6366f1;
-        display: block;
+    .mt-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 50px;
+        border: 1px solid var(--mt-line);
+        background: var(--mt-surface);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        color: var(--text-secondary);
     }
 
-    .stat-label {
-        font-size: 14px;
-        color: rgba(255, 255, 255, 0.7);
+    .mt-eyebrow i {
+        color: var(--mt-accent);
     }
 
-    /* Form Section - 2 Column Layout */
-    .form-section {
-        padding: 80px 0;
-        background: #f8fafc;
+    .mt-title {
+        margin: var(--space-3) 0 0;
+        font-size: clamp(26px, 2vw + 18px, 38px);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        color: var(--text-primary);
     }
 
-    .form-grid {
+    .mt-lead {
+        max-width: 580px;
+        margin: var(--space-3) auto 0;
+        font-size: var(--text-base);
+        line-height: 1.65;
+        color: var(--text-muted);
+    }
+
+    /* Doğrulanabilir üç madde - uydurma istatistik yok */
+    .mt-points {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: var(--space-3) var(--space-5);
+        margin-top: var(--space-4);
+    }
+
+    .mt-points span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+    }
+
+    .mt-points i {
+        font-size: 11px;
+        color: var(--mt-accent);
+    }
+
+    /* ===== Bölümler ===== */
+    .mt-section {
+        padding: var(--space-7) 0;
+    }
+
+    .mt-section.is-alt {
+        background: var(--mt-surface);
+        border-top: 1px solid var(--mt-line);
+        border-bottom: 1px solid var(--mt-line);
+    }
+
+    .mt-head {
+        max-width: 640px;
+        margin-bottom: var(--space-5);
+    }
+
+    .mt-head h2 {
+        font-size: clamp(20px, 1vw + 15px, 25px);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.3;
+        color: var(--text-primary);
+    }
+
+    .mt-head p {
+        margin-top: 6px;
+        font-size: var(--text-sm);
+        line-height: 1.6;
+        color: var(--text-muted);
+    }
+
+    /* ===== Araştırma formu + özet ===== */
+    .mt-apply {
         display: grid;
-        grid-template-columns: 1fr 400px;
-        gap: 40px;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
+        gap: var(--space-5);
         align-items: start;
     }
 
-    /* Main Form Card */
-    .main-form-card {
-        background: white;
-        border-radius: 16px;
-        padding: 40px;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+    .mt-card {
+        border: 1px solid var(--mt-line);
+        border-radius: var(--mt-radius);
+        background: var(--mt-surface);
+        overflow: hidden;
     }
 
-    .main-form-card h2 {
-        font-size: 24px;
-        color: #0f172a;
-        margin-bottom: 8px;
+    .mt-card-head {
+        padding: var(--space-3) var(--space-5);
+        border-bottom: 1px solid var(--mt-line);
+        background: color-mix(in srgb, var(--primary) 5%, transparent);
     }
 
-    .main-form-card>p {
-        color: #64748b;
-        margin-bottom: 30px;
-    }
-
-    .form-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-    }
-
-    .form-group {
-        margin-bottom: 20px;
-    }
-
-    .form-group label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: 600;
-        color: #334155;
-        font-size: 14px;
-    }
-
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-        width: 100%;
-        padding: 14px 16px;
-        background: #f8fafc;
-        border: 2px solid #e2e8f0;
-        border-radius: 10px;
-        color: #0f172a;
-        font-size: 15px;
-        transition: all 0.3s ease;
-    }
-
-    .form-group input:focus,
-    .form-group select:focus {
-        outline: none;
-        border-color: #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    }
-
-    /* Class Selection */
-    .class-selection {
-        background: #f8fafc;
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 25px;
-    }
-
-    .class-selection h4 {
-        font-size: 16px;
-        color: #0f172a;
-        margin-bottom: 15px;
-    }
-
-    .class-checkboxes {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 12px;
-    }
-
-    .class-checkbox {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 12px 15px;
-        background: white;
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-size: 13px;
-        color: #475569;
-    }
-
-    .class-checkbox:hover {
-        border-color: #6366f1;
-    }
-
-    .class-checkbox input {
-        width: 18px;
-        height: 18px;
-        accent-color: #6366f1;
-    }
-
-    .class-checkbox.selected {
-        border-color: #6366f1;
-        background: rgba(99, 102, 241, 0.05);
-    }
-
-    /* Summary Card */
-    .summary-card {
-        background: linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%);
-        border-radius: 16px;
-        padding: 30px;
-        color: white;
-        position: sticky;
-        top: 120px;
-    }
-
-    .summary-card h3 {
-        font-size: 20px;
-        margin-bottom: 25px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .summary-item {
-        display: flex;
-        justify-content: space-between;
-        padding: 15px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        font-size: 14px;
-    }
-
-    .summary-item:last-child {
-        border-bottom: none;
-    }
-
-    .summary-item .label {
-        color: rgba(255, 255, 255, 0.7);
-    }
-
-    .summary-item .value {
+    .mt-card-head h3 {
+        font-size: 11px;
         font-weight: 700;
-        color: #6366f1;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-primary);
     }
 
-    .summary-total {
-        background: rgba(99, 102, 241, 0.2);
-        border-radius: 10px;
-        padding: 20px;
-        margin-top: 20px;
-        text-align: center;
+    .mt-card-head p {
+        margin-top: 4px;
+        font-size: var(--text-xs);
+        color: var(--text-muted);
     }
 
-    .summary-total .total-label {
-        font-size: 13px;
-        color: rgba(255, 255, 255, 0.7);
-        margin-bottom: 5px;
+    .mt-card-body {
+        padding: var(--space-5);
     }
 
-    .summary-total .total-amount {
-        font-size: 32px;
-        font-weight: 800;
-        color: white;
-    }
-
-    .summary-note {
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.5);
-        margin-top: 15px;
-        text-align: center;
-    }
-
-    /* Popular Classes */
-    .classes-section {
-        padding: 80px 0;
-        background: white;
-    }
-
-    .classes-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 25px;
-    }
-
-    .class-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 25px;
-        transition: all 0.3s ease;
-    }
-
-    .class-card:hover {
-        border-color: #6366f1;
-        transform: translateY(-5px);
-        box-shadow: 0 15px 30px rgba(99, 102, 241, 0.1);
-    }
-
-    .class-card-icon {
-        width: 50px;
-        height: 50px;
-        background: linear-gradient(135deg, #6366f1, #818cf8);
-        border-radius: 10px;
+    .mt-alert {
         display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 20px;
-        color: white;
-        margin-bottom: 15px;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: var(--space-4);
+        padding: 11px 14px;
+        border-radius: 8px;
+        font-size: var(--text-sm);
+        line-height: 1.5;
+        color: var(--text-primary);
     }
 
-    .class-card h4 {
-        font-size: 16px;
-        color: #0f172a;
-        margin-bottom: 8px;
+    .mt-alert.is-success {
+        border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
+        background: color-mix(in srgb, var(--success) 10%, transparent);
     }
 
-    .class-card p {
-        color: #64748b;
-        font-size: 13px;
+    .mt-alert.is-error {
+        border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+        background: color-mix(in srgb, var(--danger) 10%, transparent);
+    }
+
+    .mt-alert.is-success i {
+        color: var(--success);
+    }
+
+    .mt-alert.is-error i {
+        color: var(--danger);
+    }
+
+    .mt-alert i {
+        margin-top: 2px;
+    }
+
+    .mt-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-4);
+    }
+
+    .mt-field {
+        margin-bottom: var(--space-4);
+    }
+
+    .mt-field label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+
+    .mt-field label span {
+        font-weight: 400;
+        color: var(--text-muted);
+    }
+
+    .mt-field input,
+    .mt-field textarea {
+        width: 100%;
+        padding: 10px 13px;
+        border: 1px solid var(--mt-line);
+        border-radius: 8px;
+        background: var(--bg-body);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: var(--text-sm);
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .mt-field textarea {
+        min-height: 90px;
+        resize: vertical;
         line-height: 1.6;
     }
 
-    /* Pricing Table */
-    .pricing-section {
-        padding: 80px 0;
-        background: #f8fafc;
+    .mt-field input:focus,
+    .mt-field textarea:focus {
+        outline: none;
+        border-color: var(--mt-accent);
+        box-shadow: var(--focus-ring);
     }
 
-    .pricing-table {
-        background: white;
-        border-radius: 16px;
+    .mt-field.has-error input,
+    .mt-field.has-error textarea {
+        border-color: var(--danger);
+    }
+
+    .mt-err {
+        display: block;
+        margin-top: 5px;
+        font-size: var(--text-xs);
+        color: var(--danger);
+    }
+
+    /* Sınıf seçimi */
+    .mt-classes {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 9px;
+    }
+
+    .mt-class {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 9px 12px;
+        border: 1px solid var(--mt-line);
+        border-radius: 8px;
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+
+    .mt-class:hover {
+        border-color: var(--mt-accent);
+    }
+
+    .mt-class input {
+        accent-color: var(--mt-accent);
+        flex-shrink: 0;
+    }
+
+    .mt-class:has(input:checked) {
+        border-color: var(--mt-accent);
+        background: color-mix(in srgb, var(--primary) 8%, transparent);
+        color: var(--text-primary);
+    }
+
+    .mt-class b {
+        font-weight: 700;
+        color: var(--mt-accent);
+    }
+
+    /* Bot tuzağı */
+    .mt-trap {
+        position: absolute;
+        left: -9999px;
+        width: 1px;
+        height: 1px;
         overflow: hidden;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
     }
 
-    .pricing-table table {
+    .mt-submit {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        width: 100%;
+        margin-top: var(--space-4);
+        padding: 13px 24px;
+        border: none;
+        border-radius: 8px;
+        background: var(--mt-accent);
+        color: #fff;
+        font-family: inherit;
+        font-size: var(--text-base);
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
+
+    .mt-submit:hover {
+        background: var(--primary-dark);
+    }
+
+    .mt-note {
+        margin-top: var(--space-3);
+        font-size: var(--text-xs);
+        line-height: 1.5;
+        color: var(--text-muted);
+    }
+
+    .mt-note a {
+        color: var(--mt-accent);
+    }
+
+    /* Özet */
+    .mt-sum-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--space-3);
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border-light);
+        font-size: var(--text-sm);
+    }
+
+    .mt-sum-row span {
+        color: var(--text-muted);
+    }
+
+    .mt-sum-row b {
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+    }
+
+    .mt-sum-total {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--space-3);
+        margin-top: var(--space-4);
+        padding: var(--space-3) var(--space-4);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--primary) 7%, transparent);
+    }
+
+    .mt-sum-total span {
+        font-size: var(--text-sm);
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .mt-sum-total b {
+        font-size: 23px;
+        font-weight: 700;
+        color: var(--mt-accent);
+    }
+
+    /* ===== Sınıf kartları ===== */
+    .mt-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--space-4);
+    }
+
+    .mt-tile {
+        padding: var(--space-4);
+        border: 1px solid var(--mt-line);
+        border-radius: var(--mt-radius);
+        background: var(--bg-body);
+    }
+
+    .mt-tile-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 9px;
+    }
+
+    .mt-tile-icon {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--primary) 10%, transparent);
+        color: var(--mt-accent);
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .mt-tile h4 {
+        font-size: var(--text-sm);
+        font-weight: 700;
+        color: var(--text-primary);
+        line-height: 1.3;
+    }
+
+    .mt-tile-no {
+        display: block;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--mt-accent);
+    }
+
+    .mt-tile p {
+        font-size: var(--text-sm);
+        line-height: 1.55;
+        color: var(--text-muted);
+    }
+
+    /* ===== Ücret tablosu ===== */
+    .mt-table-wrap {
+        border: 1px solid var(--mt-line);
+        border-radius: var(--mt-radius);
+        background: var(--mt-surface);
+        overflow-x: auto;
+    }
+
+    .mt-table {
         width: 100%;
         border-collapse: collapse;
+        min-width: 520px;
     }
 
-    .pricing-table th {
-        background: linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%);
-        color: white;
-        padding: 18px 20px;
+    .mt-table th,
+    .mt-table td {
+        padding: 13px var(--space-5);
         text-align: left;
+        font-size: var(--text-sm);
+        border-bottom: 1px solid var(--border-light);
+    }
+
+    .mt-table thead th {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--mt-line);
+        background: color-mix(in srgb, var(--primary) 5%, transparent);
+    }
+
+    .mt-table tbody th {
         font-weight: 600;
-        font-size: 14px;
+        color: var(--text-primary);
     }
 
-    .pricing-table td {
-        padding: 16px 20px;
-        border-bottom: 1px solid #e2e8f0;
-        color: #334155;
-        font-size: 14px;
+    .mt-table td {
+        color: var(--text-muted);
     }
 
-    .pricing-table tr:last-child td {
+    .mt-table td.mt-amount {
+        text-align: right;
+        font-weight: 700;
+        color: var(--text-primary);
+        white-space: nowrap;
+    }
+
+    .mt-table tr:last-child th,
+    .mt-table tr:last-child td {
         border-bottom: none;
     }
 
-    .pricing-table tr:hover td {
-        background: rgba(99, 102, 241, 0.03);
-    }
-
-    /* Advantages */
-    .advantages-section {
-        padding: 80px 0;
-        background: white;
-    }
-
-    .advantages-grid {
+    /* ===== Süreç ===== */
+    .mt-steps {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 25px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: var(--space-4);
     }
 
-    .advantage-card {
-        text-align: center;
-        padding: 30px 20px;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        transition: all 0.3s ease;
+    .mt-step {
+        padding: var(--space-4);
+        border: 1px solid var(--mt-line);
+        border-radius: var(--mt-radius);
+        background: var(--bg-body);
     }
 
-    .advantage-card:hover {
-        border-color: #6366f1;
-        transform: translateY(-5px);
-    }
-
-    .advantage-icon {
-        width: 60px;
-        height: 60px;
-        background: linear-gradient(135deg, #6366f1, #818cf8);
+    .mt-step-no {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 10px;
         border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 15px;
-        font-size: 24px;
-        color: white;
-    }
-
-    .advantage-card h4 {
-        font-size: 15px;
-        color: #0f172a;
-        margin-bottom: 8px;
-    }
-
-    .advantage-card p {
-        color: #64748b;
-        font-size: 13px;
-    }
-
-    /* Process Timeline */
-    .process-section {
-        padding: 80px 0;
-        background: linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%);
-    }
-
-    .process-section .section-header h2,
-    .process-section .section-header p {
-        color: white;
-    }
-
-    .process-section .section-badge {
-        background: rgba(99, 102, 241, 0.2);
-        color: #818cf8;
-    }
-
-    .process-timeline {
-        display: flex;
-        justify-content: space-between;
-        position: relative;
-        margin-top: 50px;
-    }
-
-    .process-timeline::before {
-        content: '';
-        position: absolute;
-        top: 35px;
-        left: 70px;
-        right: 70px;
-        height: 3px;
-        background: linear-gradient(90deg, #6366f1, #0ea5e9);
-    }
-
-    .process-step {
-        text-align: center;
-        position: relative;
-        flex: 1;
-    }
-
-    .process-number {
-        width: 70px;
-        height: 70px;
-        background: linear-gradient(135deg, #6366f1, #818cf8);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        font-weight: 800;
-        color: white;
-        margin: 0 auto 20px;
-        position: relative;
-        z-index: 1;
-        box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
-    }
-
-    .process-step h4 {
-        font-size: 15px;
-        color: white;
-        margin-bottom: 8px;
-    }
-
-    .process-step p {
-        color: rgba(255, 255, 255, 0.6);
+        background: var(--mt-accent);
+        color: #fff;
         font-size: 12px;
-        max-width: 140px;
-        margin: 0 auto;
-    }
-
-    /* CTA */
-    .cta-section {
-        padding: 80px 0;
-        background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
-        text-align: center;
-    }
-
-    .cta-section h2 {
-        font-size: 32px;
         font-weight: 700;
-        color: white;
-        margin-bottom: 15px;
     }
 
-    .cta-section p {
-        font-size: 16px;
-        color: rgba(255, 255, 255, 0.9);
-        margin-bottom: 30px;
+    .mt-step h4 {
+        margin-bottom: 6px;
+        font-size: var(--text-sm);
+        font-weight: 700;
+        color: var(--text-primary);
     }
 
-    .cta-buttons {
-        display: flex;
-        gap: 20px;
-        justify-content: center;
+    .mt-step p {
+        font-size: var(--text-xs);
+        line-height: 1.55;
+        color: var(--text-muted);
     }
 
-    .btn-white {
-        background: white;
-        color: #6366f1;
-        padding: 16px 40px;
-        font-size: 16px;
-        font-weight: 600;
-        border-radius: 10px;
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        transition: all 0.3s ease;
+    /* ==========================================
+       Açık tema: zemin soğuk maviye çekilir,
+       kartlar beyaz kalıp zeminden ayrışır.
+       ========================================== */
+    [data-theme="light"] .mt {
+        --mt-line: #d3e2f8;
+        background: #eff5fe;
     }
 
-    .btn-white:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    [data-theme="light"] .mt-hero {
+        background: linear-gradient(180deg, #e4edfb 0%, #eff5fe 100%);
     }
 
-    .btn-outline-white {
-        background: transparent;
-        border: 2px solid white;
-        color: white;
-        padding: 14px 40px;
-        font-size: 16px;
-        font-weight: 600;
-        border-radius: 10px;
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        transition: all 0.3s ease;
+    [data-theme="light"] .mt-section.is-alt {
+        background: #e4edfb;
     }
 
-    .btn-outline-white:hover {
-        background: white;
-        color: #6366f1;
+    [data-theme="light"] .mt-card,
+    [data-theme="light"] .mt-table-wrap {
+        box-shadow:
+            0 1px 2px rgba(36, 116, 245, 0.05),
+            0 10px 26px -14px rgba(36, 116, 245, 0.28);
     }
 
-    /* Light Theme Section Headers */
-    .section-header-light .section-badge {
-        background: rgba(99, 102, 241, 0.1);
-        color: #6366f1;
+    [data-theme="light"] .mt-tile,
+    [data-theme="light"] .mt-step,
+    [data-theme="light"] .mt-field input,
+    [data-theme="light"] .mt-field textarea {
+        background: #fff;
     }
 
-    .section-header-light h2 {
-        color: #0f172a;
-    }
-
-    .section-header-light p {
-        color: #64748b;
-    }
-
-    /* Responsive */
-    @media (max-width: 1200px) {
-        .advantages-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-
-        .class-checkboxes {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-
-    @media (max-width: 992px) {
-        .form-grid {
+    @media (max-width: 1000px) {
+        .mt-apply {
             grid-template-columns: 1fr;
         }
 
-        .summary-card {
-            position: static;
-        }
-
-        .classes-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-
-        .process-timeline {
-            flex-direction: column;
-            gap: 30px;
-        }
-
-        .process-timeline::before {
-            display: none;
+        .mt-steps {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
         }
     }
 
-    @media (max-width: 768px) {
-        .form-row {
+    @media (max-width: 860px) {
+        .mt-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .mt-classes {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 640px) {
+
+        .mt-row,
+        .mt-grid,
+        .mt-classes {
             grid-template-columns: 1fr;
         }
 
-        .classes-grid {
+        .mt-steps {
             grid-template-columns: 1fr;
-        }
-
-        .advantages-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .hero-stats {
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .marka-hero h1 {
-            font-size: 32px;
-        }
-
-        .class-checkboxes {
-            grid-template-columns: 1fr;
-        }
-
-        .cta-buttons {
-            flex-direction: column;
-            align-items: center;
         }
     }
 </style>
 
-<!-- Hero Section -->
-<section class="marka-hero">
-    <div class="container">
-        <h1>Marka Tescil Sorgulama</h1>
-        <p>İşletmenizin tüm mal ve hizmetlerini diğer işletmelerin mal veya hizmetlerinden ayıran her türlü işaret marka
-            olarak adlandırılmaktadır. Markanızı tescille koruma altına alın.</p>
+<div class="mt">
 
-        <div class="hero-stats">
-            <div class="stat-item">
-                <span class="stat-number">5000+</span>
-                <span class="stat-label">Tescilli Marka</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-number">%98</span>
-                <span class="stat-label">Başarı Oranı</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-number">7/24</span>
-                <span class="stat-label">Destek</span>
+    <section class="mt-hero">
+        <div class="container">
+            <div class="mt-hero-inner">
+                <span class="mt-eyebrow"><i class="fas fa-trademark"></i> Türk Patent ve Marka Kurumu başvurusu</span>
+                <h1 class="mt-title">Markanızı koruma altına alın</h1>
+                <p class="mt-lead">
+                    İşletmenizin mal ve hizmetlerini diğerlerinden ayıran her işaret marka olarak tescil
+                    edilebilir. Önce ücretsiz ön araştırma yapıyor, sonuca göre başvuruyu biz yürütüyoruz.
+                </p>
+                <div class="mt-points">
+                    <span><i class="fas fa-check"></i> Ücretsiz ön araştırma</span>
+                    <span><i class="fas fa-check"></i> 10 yıl koruma, süresiz yenileme</span>
+                    <span><i class="fas fa-check"></i> .com.tr alan adı hakkı</span>
+                </div>
             </div>
         </div>
-    </div>
-</section>
+    </section>
 
-<!-- Form Section -->
-<section class="form-section">
-    <div class="container">
-        <div class="form-grid">
-            <!-- Main Form -->
-            <div class="main-form-card">
-                <h2>Ücretsiz Marka Araştırma</h2>
-                <p>Bilgilerinizi ve marka sektörünüzü girin, uzmanlarımız ücretsiz araştırma yapsınlar.</p>
+    <!-- Araştırma formu -->
+    <section class="mt-section" id="arastirma">
+        <div class="container">
+            <div class="mt-apply">
 
-                <form action="contact.php" method="POST">
-                    <input type="hidden" name="subject" value="marka-tescil">
+                <div class="mt-card">
+                    <div class="mt-card-head">
+                        <h3>Ücretsiz marka araştırması</h3>
+                        <p>Marka adınızı ve ilgilendiğiniz sınıfları yazın; uzmanımız Türk Patent kayıtlarını tarayıp
+                            dönüş yapsın.</p>
+                    </div>
+                    <div class="mt-card-body">
+                        <?php if ($sonuc !== ''): ?>
+                            <div class="mt-alert <?= $sonucTipi === 'success' ? 'is-success' : 'is-error' ?>">
+                                <i class="fas fa-<?= $sonucTipi === 'success' ? 'circle-check' : 'circle-exclamation' ?>"></i>
+                                <span><?= htmlspecialchars($sonuc) ?></span>
+                            </div>
+                        <?php endif; ?>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Ad Soyad *</label>
-                            <input type="text" name="name" placeholder="Adınız Soyadınız" required>
+                        <form method="post" action="marka-tescil.php#arastirma" novalidate id="mt-form">
+                            <input type="hidden" name="token"
+                                value="<?= htmlspecialchars($_SESSION['marka_token']) ?>">
+
+                            <div class="mt-trap" aria-hidden="true">
+                                <label for="website">Web siteniz</label>
+                                <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+                            </div>
+
+                            <div class="mt-row">
+                                <div class="mt-field <?= isset($hatalar['ad_soyad']) ? 'has-error' : '' ?>">
+                                    <label for="ad_soyad">Ad soyad *</label>
+                                    <input type="text" id="ad_soyad" name="ad_soyad" required maxlength="120"
+                                        autocomplete="name" value="<?= htmlspecialchars($eski['ad_soyad']) ?>">
+                                    <?php if (isset($hatalar['ad_soyad'])): ?>
+                                        <span class="mt-err"><?= htmlspecialchars($hatalar['ad_soyad']) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="mt-field <?= isset($hatalar['telefon']) ? 'has-error' : '' ?>">
+                                    <label for="telefon">Telefon *</label>
+                                    <input type="tel" id="telefon" name="telefon" required maxlength="30"
+                                        autocomplete="tel" dir="ltr" placeholder="532 123 45 67"
+                                        value="<?= htmlspecialchars($eski['telefon']) ?>">
+                                    <?php if (isset($hatalar['telefon'])): ?>
+                                        <span class="mt-err"><?= htmlspecialchars($hatalar['telefon']) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+
+                            <div class="mt-row">
+                                <div class="mt-field <?= isset($hatalar['email']) ? 'has-error' : '' ?>">
+                                    <label for="email">E-posta <span>(isteğe bağlı)</span></label>
+                                    <input type="email" id="email" name="email" maxlength="150" autocomplete="email"
+                                        dir="ltr" value="<?= htmlspecialchars($eski['email']) ?>">
+                                    <?php if (isset($hatalar['email'])): ?>
+                                        <span class="mt-err"><?= htmlspecialchars($hatalar['email']) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="mt-field <?= isset($hatalar['marka_adi']) ? 'has-error' : '' ?>">
+                                    <label for="marka_adi">Marka adı *</label>
+                                    <input type="text" id="marka_adi" name="marka_adi" required maxlength="150"
+                                        placeholder="Tescil edilecek marka"
+                                        value="<?= htmlspecialchars($eski['marka_adi']) ?>">
+                                    <?php if (isset($hatalar['marka_adi'])): ?>
+                                        <span class="mt-err"><?= htmlspecialchars($hatalar['marka_adi']) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+
+                            <div class="mt-field <?= isset($hatalar['siniflar']) ? 'has-error' : '' ?>">
+                                <label>Marka sınıfı * <span>(birden fazla seçebilirsiniz)</span></label>
+                                <div class="mt-classes">
+                                    <?php foreach ($siniflar as $s): ?>
+                                        <label class="mt-class">
+                                            <input type="checkbox" name="siniflar[]" value="<?= (int) $s['no'] ?>"
+                                                <?= in_array($s['no'], $secili, true) ? 'checked' : '' ?>>
+                                            <span><b><?= (int) $s['no'] ?></b> · <?= htmlspecialchars($s['ad']) ?></span>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                                <?php if (isset($hatalar['siniflar'])): ?>
+                                    <span class="mt-err"><?= htmlspecialchars($hatalar['siniflar']) ?></span>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="mt-field">
+                                <label for="not_metni">Eklemek istedikleriniz <span>(isteğe bağlı)</span></label>
+                                <textarea id="not_metni" name="not_metni"
+                                    maxlength="1000"><?= htmlspecialchars($eski['not_metni']) ?></textarea>
+                            </div>
+
+                            <button type="submit" class="mt-submit">
+                                <i class="fas fa-magnifying-glass"></i> Ücretsiz araştırma isteyin
+                            </button>
+
+                            <p class="mt-note">
+                                Bilgileriniz yalnızca araştırma talebinizi yanıtlamak için kullanılır.
+                                Ayrıntı için <a href="kvkk.php">KVKK Aydınlatma Metni</a>.
+                            </p>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Özet: ücretler tabloda tanımlıysa hesaplanır -->
+                <?php if ($ozetVar): ?>
+                    <div class="mt-card" id="mt-ozet" data-hizmet="<?= (int) $hizmetBedeli ?>"
+                        data-basvuru="<?= (int) $basvuruHarci ?>" data-eksinif="<?= (int) $ekSinifHarci ?>">
+                        <div class="mt-card-head">
+                            <h3>Başvuru özeti</h3>
+                            <p>Seçtiğiniz sınıf sayısına göre güncellenir.</p>
                         </div>
-                        <div class="form-group">
-                            <label>Telefon *</label>
-                            <input type="tel" name="phone" placeholder="0532 XXX XX XX" required>
+                        <div class="mt-card-body">
+                            <div class="mt-sum-row">
+                                <span><?= htmlspecialchars($ucretler['hizmet_bedeli']['baslik']) ?></span>
+                                <b>₺<?= number_format($hizmetBedeli, 0, ',', '.') ?></b>
+                            </div>
+                            <div class="mt-sum-row">
+                                <span>Başvuru harcı (1 sınıf)</span>
+                                <b>₺<?= number_format($basvuruHarci, 0, ',', '.') ?></b>
+                            </div>
+                            <?php if ($ekSinifHarci > 0): ?>
+                                <div class="mt-sum-row">
+                                    <span>Ek sınıf (<b id="mt-ek-adet">0</b> adet)</span>
+                                    <b id="mt-ek-tutar">₺0</b>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="mt-sum-total">
+                                <span>Toplam</span>
+                                <b id="mt-toplam">₺<?= number_format($hizmetBedeli + $basvuruHarci, 0, ',', '.') ?></b>
+                            </div>
+
+                            <p class="mt-note">
+                                Tutarlara KDV dâhil değildir. Harçlar Türk Patent ve Marka Kurumu tarafından
+                                belirlenir<?= $gecerlilik !== '' ? ' (' . htmlspecialchars($gecerlilik) . ' tarifesi)' : '' ?>.
+                            </p>
                         </div>
                     </div>
+                <?php endif; ?>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>E-posta</label>
-                            <input type="email" name="email" placeholder="ornek@email.com">
+            </div>
+        </div>
+    </section>
+
+    <!-- Sınıflar -->
+    <section class="mt-section is-alt">
+        <div class="container">
+            <div class="mt-head">
+                <h2>Popüler marka sınıfları</h2>
+                <p>Marka tescili, seçtiğiniz sınıflardaki mal ve hizmetler için koruma sağlar. Aşağıdakiler en sık
+                    başvurulan sınıflardır; tam liste 45 sınıftan oluşur.</p>
+            </div>
+
+            <div class="mt-grid">
+                <?php foreach ($siniflar as $s): ?>
+                    <div class="mt-tile">
+                        <div class="mt-tile-top">
+                            <div class="mt-tile-icon"><i class="fas <?= htmlspecialchars($s['ikon']) ?>"></i></div>
+                            <h4>
+                                <span class="mt-tile-no">Sınıf <?= (int) $s['no'] ?></span>
+                                <?= htmlspecialchars($s['ad']) ?>
+                            </h4>
                         </div>
-                        <div class="form-group">
-                            <label>Marka Adı *</label>
-                            <input type="text" name="brand_name" placeholder="Tescil edilecek marka" required>
-                        </div>
+                        <p><?= htmlspecialchars($s['aciklama']) ?></p>
                     </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </section>
 
-                    <div class="class-selection">
-                        <h4>Marka Sınıfı Seçin</h4>
-                        <div class="class-checkboxes">
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="9"> Sınıf 9 - Yazılım
-                            </label>
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="35"> Sınıf 35 - Ticaret
-                            </label>
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="38"> Sınıf 38 - Telekom
-                            </label>
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="41"> Sınıf 41 - Eğitim
-                            </label>
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="42"> Sınıf 42 - Bilim
-                            </label>
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="43"> Sınıf 43 - Yiyecek
-                            </label>
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="25"> Sınıf 25 - Giyim
-                            </label>
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="3"> Sınıf 3 - Kozmetik
-                            </label>
-                            <label class="class-checkbox">
-                                <input type="checkbox" name="classes[]" value="30"> Sınıf 30 - Gıda
-                            </label>
+    <!-- Ücretler: tablo boşsa bölüm hiç basılmaz -->
+    <?php if ($harclar): ?>
+        <section class="mt-section">
+            <div class="container">
+                <div class="mt-head">
+                    <h2>Türk Patent harçları</h2>
+                    <p>
+                        Aşağıdaki tutarlar Türk Patent ve Marka Kurumu'nun
+                        <?= $gecerlilik !== '' ? htmlspecialchars($gecerlilik) . ' yılı ' : '' ?>tarifesine göredir ve
+                        hizmet bedelimizden ayrıdır. Güncel tarife için
+                        <a href="https://www.turkpatent.gov.tr/ucret-tarifesi" target="_blank"
+                            rel="noopener noreferrer">Türk Patent ücret tarifesi</a>ne bakabilirsiniz.
+                    </p>
+                </div>
+
+                <div class="mt-table-wrap">
+                    <table class="mt-table">
+                        <thead>
+                            <tr>
+                                <th>İşlem</th>
+                                <th>Açıklama</th>
+                                <th style="text-align: right;">Tutar</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($harclar as $h): ?>
+                                <tr>
+                                    <th><?= htmlspecialchars((string) $h['baslik']) ?></th>
+                                    <td><?= htmlspecialchars((string) ($h['aciklama'] ?? '')) ?></td>
+                                    <td class="mt-amount">₺<?= number_format((float) $h['tutar'], 0, ',', '.') ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
+
+    <!-- Avantajlar -->
+    <section class="mt-section is-alt">
+        <div class="container">
+            <div class="mt-head">
+                <h2>Tescil size ne kazandırır</h2>
+                <p>Tescilsiz kullanım da mümkündür; ancak aşağıdaki hakların tamamı yalnızca tescille doğar.</p>
+            </div>
+
+            <div class="mt-grid">
+                <?php foreach ($avantajlar as [$ikon, $baslik, $metin]): ?>
+                    <div class="mt-tile">
+                        <div class="mt-tile-top">
+                            <div class="mt-tile-icon"><i class="fas <?= htmlspecialchars($ikon) ?>"></i></div>
+                            <h4><?= htmlspecialchars($baslik) ?></h4>
                         </div>
+                        <p><?= htmlspecialchars($metin) ?></p>
                     </div>
-
-                    <button type="submit" class="btn btn-primary" style="width: 100%; padding: 16px;">
-                        <i class="fas fa-search"></i> Ücretsiz Araştır
-                    </button>
-                </form>
-            </div>
-
-            <!-- Summary Card -->
-            <div class="summary-card">
-                <h3><i class="fas fa-file-invoice"></i> Başvuru Özeti</h3>
-
-                <div class="summary-item">
-                    <span class="label">Hizmet Bedeli</span>
-                    <span class="value">₺2.500</span>
-                </div>
-                <div class="summary-item">
-                    <span class="label">Harç Bedeli (1 Sınıf)</span>
-                    <span class="value">₺1.200</span>
-                </div>
-                <div class="summary-item">
-                    <span class="label">Ek Sınıf (Her biri)</span>
-                    <span class="value">+₺600</span>
-                </div>
-
-                <div class="summary-total">
-                    <div class="total-label">Toplam Tutar</div>
-                    <div class="total-amount">₺3.700</div>
-                </div>
-
-                <p class="summary-note">* Fiyatlarımıza KDV dahil DEĞİLDİR.</p>
+                <?php endforeach; ?>
             </div>
         </div>
-    </div>
-</section>
+    </section>
 
-<!-- Popular Classes -->
-<section class="classes-section">
-    <div class="container">
-        <div class="section-header section-header-light">
-            <span class="section-badge"><i class="fas fa-tags"></i> Sınıflar</span>
-            <h2 class="section-title">Popüler Marka Sınıfları</h2>
-            <p class="section-desc">Sınıf içerikleri için detaylı bilgi alabilirsiniz.</p>
-        </div>
+    <!-- Süreç -->
+    <section class="mt-section">
+        <div class="container">
+            <div class="mt-head">
+                <h2>Tescil süreci</h2>
+                <p>Başvurudan belgeye kadar izlenen resmî adımlar. Süre, itiraz olup olmamasına göre değişir.</p>
+            </div>
 
-        <div class="classes-grid">
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-laptop-code"></i></div>
-                <h4>Yazılım & Elektronik</h4>
-                <p>Bilgisayar yazılımları, mobil uygulamalar, elektronik cihazlar.</p>
-            </div>
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-bullhorn"></i></div>
-                <h4>Ticaret & Reklam</h4>
-                <p>Reklamcılık, iş yönetimi, ticari işletme yönetimi.</p>
-            </div>
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-satellite-dish"></i></div>
-                <h4>Telekomünikasyon</h4>
-                <p>Haberleşme hizmetleri, internet, veri iletimi.</p>
-            </div>
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-graduation-cap"></i></div>
-                <h4>Eğitim & Eğlence</h4>
-                <p>Eğitim hizmetleri, spor, kültürel faaliyetler.</p>
-            </div>
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-flask"></i></div>
-                <h4>Bilimsel Hizmetler</h4>
-                <p>Teknolojik hizmetler, araştırma, yazılım tasarımı.</p>
-            </div>
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-utensils"></i></div>
-                <h4>Yiyecek & İçecek</h4>
-                <p>Restoran, cafe, otel, konaklama hizmetleri.</p>
-            </div>
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-tshirt"></i></div>
-                <h4>Giyim & Tekstil</h4>
-                <p>Giysiler, ayakkabılar, tekstil ürünleri.</p>
-            </div>
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-spray-can"></i></div>
-                <h4>Kozmetik</h4>
-                <p>Parfümler, kozmetikler, temizlik maddeleri.</p>
-            </div>
-            <div class="class-card">
-                <div class="class-card-icon"><i class="fas fa-cookie-bite"></i></div>
-                <h4>Gıda Ürünleri</h4>
-                <p>Kahve, çay, şeker, unlu mamüller, şekerlemeler.</p>
+            <div class="mt-steps">
+                <?php foreach ($adimlar as $i => [$baslik, $metin]): ?>
+                    <div class="mt-step">
+                        <div class="mt-step-no"><?= $i + 1 ?></div>
+                        <h4><?= htmlspecialchars($baslik) ?></h4>
+                        <p><?= htmlspecialchars($metin) ?></p>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
-    </div>
-</section>
+    </section>
 
-<!-- Pricing Table -->
-<section class="pricing-section">
-    <div class="container">
-        <div class="section-header section-header-light">
-            <span class="section-badge"><i class="fas fa-lira-sign"></i> Ücretler</span>
-            <h2 class="section-title">Türk Patent Resmi Ücretleri</h2>
-            <p class="section-desc">Türk Patent ve Marka Kurumu tarafından belirlenen güncel ücretler</p>
-        </div>
+</div>
 
-        <div class="pricing-table">
-            <table>
-                <thead>
-                    <tr>
-                        <th>İşlem Türü</th>
-                        <th>Açıklama</th>
-                        <th>Ücret</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>Marka Başvuru Harcı</strong></td>
-                        <td>1 sınıf için başvuru harcı</td>
-                        <td><strong>₺1.200</strong></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Ek Sınıf Harcı</strong></td>
-                        <td>Her ek sınıf için</td>
-                        <td><strong>₺600</strong></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Tescil Harcı</strong></td>
-                        <td>Tescil belgesi düzenleme</td>
-                        <td><strong>₺1.500</strong></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Yenileme Harcı</strong></td>
-                        <td>10 yıllık yenileme (1 sınıf)</td>
-                        <td><strong>₺2.000</strong></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        <p style="text-align: center; color: #64748b; font-size: 13px; margin-top: 20px;">
-            * Ücretler Türk Patent ve Marka Kurumu tarafından güncellenebilir.
-        </p>
-    </div>
-</section>
+<script>
+    /* Başvuru özeti: seçilen sınıf sayısına göre toplamı günceller.
+       Sunucu tarafı zaten kendi hesabını yapar; bu yalnızca gösterimdir. */
+    (function () {
+        var ozet = document.getElementById('mt-ozet');
+        var form = document.getElementById('mt-form');
+        if (!ozet || !form) {
+            return;
+        }
 
-<!-- Advantages -->
-<section class="advantages-section">
-    <div class="container">
-        <div class="section-header section-header-light">
-            <span class="section-badge"><i class="fas fa-star"></i> Avantajlar</span>
-            <h2 class="section-title">Marka Tescil Avantajları</h2>
-            <p class="section-desc">Markanızı tescil ettirerek kazanacağınız haklar</p>
-        </div>
+        var hizmet = parseInt(ozet.dataset.hizmet, 10) || 0;
+        var basvuru = parseInt(ozet.dataset.basvuru, 10) || 0;
+        var ekBirim = parseInt(ozet.dataset.eksinif, 10) || 0;
 
-        <div class="advantages-grid">
-            <div class="advantage-card">
-                <div class="advantage-icon"><i class="fas fa-shield-alt"></i></div>
-                <h4>Hukuki Koruma</h4>
-                <p>Markanız yasal güvence altında</p>
-            </div>
-            <div class="advantage-card">
-                <div class="advantage-icon"><i class="fas fa-globe"></i></div>
-                <h4>.TR Alan Adı Hakkı</h4>
-                <p>.com.tr alan adı tescil hakkı</p>
-            </div>
-            <div class="advantage-card">
-                <div class="advantage-icon"><i class="fas fa-hand-holding-usd"></i></div>
-                <h4>Devlet Teşvikleri</h4>
-                <p>KOSGEB teşviklerinden yararlanın</p>
-            </div>
-            <div class="advantage-card">
-                <div class="advantage-icon"><i class="fas fa-certificate"></i></div>
-                <h4>TSE/CE Belgesi</h4>
-                <p>Belge almanız kolaylaşır</p>
-            </div>
-            <div class="advantage-card">
-                <div class="advantage-icon"><i class="fas fa-ban"></i></div>
-                <h4>Taklit Engelleme</h4>
-                <p>Taklitleri engelleyebilirsiniz</p>
-            </div>
-            <div class="advantage-card">
-                <div class="advantage-icon"><i class="fas fa-exchange-alt"></i></div>
-                <h4>Devir & Kiralama</h4>
-                <p>Markanızı satabilir, kiralayabilirsiniz</p>
-            </div>
-            <div class="advantage-card">
-                <div class="advantage-icon"><i class="fas fa-globe-americas"></i></div>
-                <h4>WIPO/Madrid Hakkı</h4>
-                <p>Uluslararası tescil başvurusu</p>
-            </div>
-            <div class="advantage-card">
-                <div class="advantage-icon"><i class="fas fa-calendar-check"></i></div>
-                <h4>10 Yıl Koruma</h4>
-                <p>10 yıl boyunca tam koruma</p>
-            </div>
-        </div>
-    </div>
-</section>
+        var ekAdetEl = document.getElementById('mt-ek-adet');
+        var ekTutarEl = document.getElementById('mt-ek-tutar');
+        var toplamEl = document.getElementById('mt-toplam');
 
-<!-- Process Timeline -->
-<section class="process-section">
-    <div class="container">
-        <div class="section-header">
-            <span class="section-badge"><i class="fas fa-tasks"></i> Süreç</span>
-            <h2 class="section-title">Marka Tescil Süreçleri</h2>
-            <p class="section-desc">Türk Patent ve Marka Kurumu tarafından yayınlanan resmi süreçler</p>
-        </div>
+        function bicim(sayi) {
+            return '₺' + sayi.toLocaleString('tr-TR');
+        }
 
-        <div class="process-timeline">
-            <div class="process-step">
-                <div class="process-number">1</div>
-                <h4>Başvuru İşlemleri</h4>
-                <p>Marka başvurunuz Türk Patent'e iletilir</p>
-            </div>
-            <div class="process-step">
-                <div class="process-number">2</div>
-                <h4>Marka İtiraz</h4>
-                <p>İtiraz süreçleri yönetilir</p>
-            </div>
-            <div class="process-step">
-                <div class="process-number">3</div>
-                <h4>Feragat İşlemleri</h4>
-                <p>Gerekli feragat işlemleri</p>
-            </div>
-            <div class="process-step">
-                <div class="process-number">4</div>
-                <h4>Bülten Yayını</h4>
-                <p>Resmi bültende yayınlanır</p>
-            </div>
-            <div class="process-step">
-                <div class="process-number">5</div>
-                <h4>Tescil Belgesi</h4>
-                <p>Belgeniz tarafınıza iletilir</p>
-            </div>
-        </div>
-    </div>
-</section>
+        function hesapla() {
+            var secili = form.querySelectorAll('input[name="siniflar[]"]:checked').length;
+            var ek = Math.max(0, secili - 1);
 
-<!-- CTA -->
-<section class="cta-section">
-    <div class="container">
-        <h2>Markanızı Hemen Araştırın!</h2>
-        <p>Ücretsiz marka araştırması için uzman ekibimizle iletişime geçin.</p>
-        <div class="cta-buttons">
-            <a href="#"
-                onclick="document.querySelector('.form-section').scrollIntoView({behavior: 'smooth'}); return false;"
-                class="btn-white">
-                <i class="fas fa-search"></i> Ücretsiz Araştır
-            </a>
-            <a href="contact.php" class="btn-outline-white">
-                <i class="fas fa-phone"></i> Bizi Arayın
-            </a>
-        </div>
-    </div>
-</section>
+            if (ekAdetEl) {
+                ekAdetEl.textContent = String(ek);
+            }
+            if (ekTutarEl) {
+                ekTutarEl.textContent = bicim(ek * ekBirim);
+            }
+            toplamEl.textContent = bicim(hizmet + basvuru + ek * ekBirim);
+        }
+
+        form.addEventListener('change', function (olay) {
+            if (olay.target.name === 'siniflar[]') {
+                hesapla();
+            }
+        });
+
+        hesapla();
+    })();
+</script>
 
 <?php require_once __DIR__ . '/theme/includes/footer.php'; ?>

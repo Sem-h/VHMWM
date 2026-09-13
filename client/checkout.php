@@ -10,6 +10,7 @@ require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Settings.php';
 require_once dirname(__DIR__) . '/includes/Mail.php';
 require_once dirname(__DIR__) . '/includes/OrderLog.php';
+require_once dirname(__DIR__) . '/includes/Sepet.php';
 
 session_name(SESSION_NAME);
 session_start();
@@ -44,14 +45,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
     try {
         $db->beginTransaction();
 
-        // Toplam hesapla
-        $subtotal = 0;
-        foreach ($_SESSION['cart'] as $item) {
-            $subtotal += (float) ($item['total'] ?? $item['price'] ?? 0) * ($item['qty'] ?? 1);
-        }
-        $taxRate = 20;
-        $tax = $subtotal * ($taxRate / 100);
-        $total = $subtotal + $tax;
+        // Tutarlar sepetle aynı kaynaktan gelir; ekranda görülen ile
+        // faturaya yazılan ayrışmasın diye tek hesap kullanılır.
+        $hesap = Sepet::toplam();
+        $subtotal = $hesap['ara'] + $hesap['kurulum'];
+        $discount = $hesap['indirim'];
+        $promoCode = $hesap['promo_kod'];
+        $taxRate = $hesap['vergi_orani'];
+        $tax = $hesap['vergi'];
+        $total = $hesap['genel'];
         $paymentMethod = $_POST['payment_method'] ?? 'bank_transfer';
 
         // Sipariş oluştur
@@ -60,9 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
         $orderNumber = str_pad((string) $newOrderInt, 5, '0', STR_PAD_LEFT);
 
         Database::query("
-            INSERT INTO orders (order_number, client_id, subtotal, tax, total, status, payment_method, created_at)
-            VALUES (?, ?, ?, ?, ?, 'pending', ?, NOW())
-        ", [$orderNumber, $clientId, $subtotal, $tax, $total, $paymentMethod]);
+            INSERT INTO orders (order_number, client_id, subtotal, discount, tax, total, status, payment_method, promo_code, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NOW())
+        ", [$orderNumber, $clientId, $subtotal, $discount, $tax, $total, $paymentMethod, $promoCode]);
 
         $orderId = (int) $db->lastInsertId();
 
@@ -114,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
         ", [
             $invoiceNumber,
             $clientId,
-            $subtotal,
+            $hesap['matrah'],
             $tax,
             $taxRate,
             $total,
@@ -155,6 +157,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
                 $itemTotal
             ]);
         }
+
+        Sepet::promosyonKullanildi($promoCode);
 
         $db->commit();
 
@@ -216,13 +220,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
     }
 }
 
-// Toplam hesapla
-$subtotal = 0;
-foreach ($_SESSION['cart'] as $item) {
-    $subtotal += (float) ($item['total'] ?? $item['price'] ?? 0) * ($item['qty'] ?? 1);
-}
-$tax = $subtotal * 0.20;
-$total = $subtotal + $tax;
+// Gösterilecek tutarlar - sepetle aynı hesap
+$ozet = Sepet::toplam();
+$subtotal = $ozet['ara'] + $ozet['kurulum'];
+$tax = $ozet['vergi'];
+$total = $ozet['genel'];
 
 include 'includes/header.php';
 ?>
@@ -745,10 +747,18 @@ include 'includes/header.php';
                             <span>Ara Toplam</span>
                             <span>₺<?= number_format($subtotal, 2) ?></span>
                         </div>
-                        <div class="total-row">
-                            <span>KDV (%20)</span>
-                            <span>₺<?= number_format($tax, 2) ?></span>
-                        </div>
+                        <?php if ($ozet['indirim'] > 0): ?>
+                            <div class="total-row">
+                                <span>İndirim (<?= htmlspecialchars((string) $ozet['promo_kod']) ?>)</span>
+                                <span>−₺<?= number_format($ozet['indirim'], 2) ?></span>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($ozet['vergi_orani'] > 0): ?>
+                            <div class="total-row">
+                                <span>KDV (%<?= rtrim(rtrim(number_format($ozet['vergi_orani'], 2, ',', '.'), '0'), ',') ?>)</span>
+                                <span>₺<?= number_format($tax, 2) ?></span>
+                            </div>
+                        <?php endif; ?>
                         <div class="total-row grand-total">
                             <span>Toplam</span>
                             <span>₺<?= number_format($total, 2) ?></span>
