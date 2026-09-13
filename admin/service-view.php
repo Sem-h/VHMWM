@@ -1,571 +1,684 @@
 <?php
+/**
+ * VHM - Hizmet detayı
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - Oturum kontrolü header.php'ye bırakılmıştı; POST işleyicisi ondan
+ *     önce çalıştığı için yetkisiz bir istek hizmeti askıya alabiliyordu.
+ *   - Durum doğrudan $_POST'tan alınıp yazılıyordu, enum dışı değer
+ *     denetlenmiyordu.
+ *   - Hizmet sonlandırıldığında termination_date hiç yazılmıyordu.
+ *   - PRG yoktu; yenilemede aynı bildirim e-postası tekrar gidiyordu.
+ */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Settings.php';
-require_once dirname(__DIR__) . '/includes/Mail.php';
-require_once dirname(__DIR__) . '/includes/ESXi.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
-/* Oturum kontrolü burada; header.php sayfanın sonunda çağrıldığı için
-   oradaki kontrol POST işleyicisini durdurmuyordu. */
-if (!isset($_SESSION["admin_id"])) {
-    header("Location: index.php");
+if (!isset($_SESSION['admin_id'])) {
+    header('Location: index.php');
     exit;
 }
 
-$pageTitle = 'Hizmet Detayı';
-$currentPage = 'services';
-$db = Database::getInstance();
+$id = (int) ($_GET['id'] ?? 0);
 
-$serviceId = (int)($_GET['id'] ?? 0);
-$message = '';
+/* services.status enum'u ile birebir aynı */
+const HZ_DURUMLAR = [
+    'pending' => ['Bekliyor', 'badge-warning'],
+    'active' => ['Etkin', 'badge-success'],
+    'suspended' => ['Askıda', 'badge-danger'],
+    'terminated' => ['Sonlandırıldı', 'badge'],
+    'cancelled' => ['İptal', 'badge'],
+];
 
-// Hizmet bilgilerini çek
-$stmt = $db->prepare("
-    SELECT s.*, p.name as product_name, p.type as product_type,
-           c.first_name, c.last_name, c.email, c.phone,
-           sv.name as server_name, sv.hostname as server_hostname
-    FROM services s 
-    LEFT JOIN products p ON s.product_id = p.id
-    LEFT JOIN clients c ON s.client_id = c.id 
-    LEFT JOIN servers sv ON s.server_id = sv.id
-    WHERE s.id = ?
-");
-$stmt->execute([$serviceId]);
-$service = $stmt->fetch();
+const HZ_DONEMLER = [
+    'monthly' => 'Aylık', 'quarterly' => '3 aylık', 'semiannually' => '6 aylık',
+    'annually' => 'Yıllık', 'biennially' => '2 yıllık', 'triennially' => '3 yıllık',
+    'onetime' => 'Tek seferlik',
+];
 
-if (!$service) {
+$hizmet = $id > 0 ? Database::fetch(
+    "SELECT s.*, p.name AS urun, p.type AS urun_tipi,
+            c.first_name, c.last_name, c.email, c.phone,
+            sv.name AS sunucu, sv.hostname AS sunucu_adres
+       FROM services s
+       LEFT JOIN products p ON p.id = s.product_id
+       LEFT JOIN clients c ON c.id = s.client_id
+       LEFT JOIN servers sv ON sv.id = s.server_id
+      WHERE s.id = ?",
+    [$id]
+) : null;
+
+if (!$hizmet) {
+    $_SESSION['hz_mesaj'] = ['tip' => 'error', 'metin' => 'Hizmet bulunamadı.'];
     header('Location: services.php');
     exit;
 }
 
-// Module data'yı parse et
-$moduleData = json_decode($service['module_data'] ?? '{}', true) ?: [];
+function hizmetDon(string $tip, string $metin, int $id): never
+{
+    $_SESSION['hv_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: service-view.php?id=' . $id);
+    exit;
+}
 
-// ESXi sunucu listesi
-$esxiServers = [];
+$esxiSunuculari = [];
 try {
-    $esxiServers = Database::fetchAll("SELECT id, name, ip_address FROM esxi_servers WHERE is_active = 1 ORDER BY name");
-} catch (Throwable $e) {}
-
-// ESXi VM atama
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_esxi'])) {
-    $esxiServerId = (int)($_POST['esxi_server_id'] ?? 0) ?: null;
-    $esxiVmid = trim($_POST['esxi_vmid'] ?? '') ?: null;
-    $vmHostname = trim($_POST['vm_hostname'] ?? '') ?: null;
-    
-    $stmt = $db->prepare("UPDATE services SET esxi_server_id = ?, esxi_vmid = ?, vm_hostname = ?, updated_at = NOW() WHERE id = ?");
-    $stmt->execute([$esxiServerId, $esxiVmid, $vmHostname, $serviceId]);
-    
-    $service['esxi_server_id'] = $esxiServerId;
-    $service['esxi_vmid'] = $esxiVmid;
-    $service['vm_hostname'] = $vmHostname;
-    
-    $message = 'ESXi VM bilgileri güncellendi.';
+    $esxiSunuculari = Database::fetchAll(
+        "SELECT id, name, ip_address FROM esxi_servers WHERE is_active = 1 ORDER BY name"
+    );
+} catch (Throwable $e) {
+    error_log('ESXi sunucuları okunamadı: ' . $e->getMessage());
 }
 
-// Durum güncelleme
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['status'])) {
-    $oldStatus = $service['status'];
-    $newStatus = $_POST['status'];
-    $stmt = $db->prepare("UPDATE services SET status = ?, updated_at = NOW() WHERE id = ?");
-    $stmt->execute([$newStatus, $serviceId]);
-    
-    // Durum değişikliği mail bildirimi
-    try {
-        $templateName = null;
-        $extraVars = [];
-        
-        if ($newStatus === 'active' && $oldStatus !== 'active') {
-            $templateName = 'service_activated';
-            $extraVars = [
-                'domain' => $service['domain'] ?? '-',
-                'ip_address' => $service['dedicated_ip'] ?? '-',
-                'username' => $service['username'] ?? '-',
-                'password' => '(Panelden görüntüleyin)'
-            ];
-        } elseif ($newStatus === 'suspended') {
-            $templateName = 'service_suspended';
-            $extraVars = [
-                'suspend_reason' => $_POST['suspend_reason'] ?? 'Ödeme bekleniyor',
-                'suspend_date' => date('d.m.Y H:i')
-            ];
-        } elseif ($newStatus === 'active' && $oldStatus === 'suspended') {
-            $templateName = 'service_unsuspended';
-        } elseif ($newStatus === 'terminated') {
-            $templateName = 'service_terminated';
-            $extraVars = [
-                'termination_reason' => $_POST['termination_reason'] ?? 'Talep üzerine',
-                'termination_date' => date('d.m.Y H:i')
-            ];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    Guvenlik::zorunlu();
+
+    /* ---------- Durum ---------- */
+    if (isset($_POST['durum'])) {
+        $yeni = (string) $_POST['durum'];
+        $eski = (string) $hizmet['status'];
+
+        if (!isset(HZ_DURUMLAR[$yeni])) {
+            hizmetDon('error', 'Geçersiz hizmet durumu.', $id);
         }
-        
-        if ($templateName && !empty($service['email'])) {
-            Mail::sendTemplate($templateName, $service['email'], array_merge([
-                'client_name' => $service['first_name'] . ' ' . $service['last_name'],
-                'product_name' => $service['product_name'] ?? 'Hizmet'
-            ], $extraVars), $service['first_name']);
+        if ($yeni === $eski) {
+            hizmetDon('uyari', 'Hizmet zaten "' . HZ_DURUMLAR[$yeni][0] . '" durumunda.', $id);
         }
-    } catch (Throwable $e) {
-        // Mail hatası işlemi engellemesin
+
+        $gerekce = trim((string) ($_POST['gerekce'] ?? ''));
+
+        /* services tablosunda gerekçe sütunu yok; uydurmak yerine
+           yönetici notuna tarihli satır olarak ekliyoruz. */
+        $not = (string) ($hizmet['admin_notes'] ?? '');
+        if ($gerekce !== '' && ($yeni === 'suspended' || $yeni === 'terminated')) {
+            $not = trim($not . "\n" . date('d.m.Y H:i') . ' — '
+                . HZ_DURUMLAR[$yeni][0] . ': ' . $gerekce);
+        }
+
+        try {
+            if ($yeni === 'terminated') {
+                /* Sonlandırma tarihi eskiden hiç yazılmıyordu */
+                Database::query(
+                    "UPDATE services SET status = ?, termination_date = CURDATE(),
+                            admin_notes = ? WHERE id = ?",
+                    [$yeni, $not, $id]
+                );
+            } else {
+                Database::query(
+                    "UPDATE services SET status = ?, admin_notes = ? WHERE id = ?",
+                    [$yeni, $not, $id]
+                );
+            }
+        } catch (Throwable $e) {
+            error_log('Hizmet durumu güncellenemedi: ' . $e->getMessage());
+            hizmetDon('error', 'Hizmet durumu güncellenemedi.', $id);
+        }
+
+        hizmetBildir($hizmet, $eski, $yeni, $gerekce);
+        hizmetDon('success', 'Hizmet durumu "' . HZ_DURUMLAR[$yeni][0] . '" olarak güncellendi.', $id);
     }
-    
-    $service['status'] = $newStatus;
-    $message = 'Hizmet durumu güncellendi.';
+
+    /* ---------- ESXi eşlemesi ---------- */
+    if (isset($_POST['esxi_kaydet'])) {
+        $sunucuId = (int) ($_POST['esxi_server_id'] ?? 0) ?: null;
+        $vmid = trim((string) ($_POST['esxi_vmid'] ?? '')) ?: null;
+        $vmAdi = trim((string) ($_POST['vm_hostname'] ?? '')) ?: null;
+
+        /* Listede olmayan bir sunucu kimliği gönderilebiliyordu */
+        if ($sunucuId !== null && !in_array($sunucuId, array_map('intval', array_column($esxiSunuculari, 'id')), true)) {
+            hizmetDon('error', 'Seçilen ESXi sunucusu bulunamadı.', $id);
+        }
+        if ($vmid !== null && !preg_match('/^[A-Za-z0-9._-]{1,64}$/', $vmid)) {
+            hizmetDon('error', 'VM kimliği yalnızca harf, rakam, nokta, tire ve alt çizgi içerebilir.', $id);
+        }
+
+        try {
+            Database::query(
+                "UPDATE services SET esxi_server_id = ?, esxi_vmid = ?, vm_hostname = ? WHERE id = ?",
+                [$sunucuId, $vmid, $vmAdi, $id]
+            );
+        } catch (Throwable $e) {
+            error_log('ESXi eşlemesi kaydedilemedi: ' . $e->getMessage());
+            hizmetDon('error', 'ESXi bilgileri kaydedilemedi.', $id);
+        }
+
+        hizmetDon('success', 'ESXi VM bilgileri güncellendi.', $id);
+    }
+
+    hizmetDon('error', 'Tanımsız işlem.', $id);
 }
 
-// İlgili faturalar
-$invoices = $db->query("
-    SELECT i.* FROM invoices i 
-    INNER JOIN invoice_items ii ON i.id = ii.invoice_id 
-    WHERE ii.service_id = $serviceId 
-    ORDER BY i.created_at DESC
-")->fetchAll();
+/** Durum değişikliği bildirimi; gönderilemezse işlem yine tamamlanmıştır */
+function hizmetBildir(array $hizmet, string $eski, string $yeni, string $gerekce): void
+{
+    if (empty($hizmet['email'])) {
+        return;
+    }
 
-include 'includes/header.php';
+    $sablon = null;
+    $ek = [];
+
+    if ($yeni === 'active') {
+        $sablon = $eski === 'suspended' ? 'service_unsuspended' : 'service_activated';
+        if ($sablon === 'service_activated') {
+            $ek = [
+                'domain' => (string) ($hizmet['domain'] ?: '-'),
+                'ip_address' => (string) ($hizmet['dedicated_ip'] ?: '-'),
+                'username' => (string) ($hizmet['username'] ?: '-'),
+                'password' => '(Panelden görüntüleyin)',
+            ];
+        }
+    } elseif ($yeni === 'suspended') {
+        $sablon = 'service_suspended';
+        $ek = [
+            'suspend_reason' => $gerekce !== '' ? $gerekce : 'Ödeme bekleniyor',
+            'suspend_date' => date('d.m.Y H:i'),
+        ];
+    } elseif ($yeni === 'terminated') {
+        $sablon = 'service_terminated';
+        $ek = [
+            'termination_reason' => $gerekce !== '' ? $gerekce : 'Talep üzerine',
+            'termination_date' => date('d.m.Y H:i'),
+        ];
+    }
+
+    if ($sablon === null) {
+        return;
+    }
+
+    try {
+        require_once dirname(__DIR__) . '/includes/Mail.php';
+        Mail::sendTemplate($sablon, (string) $hizmet['email'], array_merge([
+            'client_name' => trim((string) $hizmet['first_name'] . ' ' . (string) $hizmet['last_name']),
+            'product_name' => (string) ($hizmet['urun'] ?: 'Hizmet'),
+        ], $ek), (string) $hizmet['first_name']);
+    } catch (Throwable $e) {
+        error_log('Hizmet bildirimi gönderilemedi: ' . $e->getMessage());
+    }
+}
+
+$mesaj = null;
+if (!empty($_SESSION['hv_mesaj'])) {
+    $mesaj = $_SESSION['hv_mesaj'];
+    unset($_SESSION['hv_mesaj']);
+}
+
+$faturalar = Database::fetchAll(
+    "SELECT DISTINCT i.*
+       FROM invoices i
+       JOIN invoice_items ii ON ii.invoice_id = i.id
+      WHERE ii.service_id = ?
+      ORDER BY i.created_at DESC
+      LIMIT 15",
+    [$id]
+);
+
+$talepler = Database::fetchAll(
+    "SELECT id, ticket_number, subject, status, updated_at
+       FROM tickets WHERE service_id = ? ORDER BY updated_at DESC LIMIT 10",
+    [$id]
+);
+
+$modulVerisi = [];
+if (!empty($hizmet['module_data'])) {
+    $cozulen = json_decode((string) $hizmet['module_data'], true);
+    if (is_array($cozulen)) {
+        $modulVerisi = $cozulen;
+    }
+}
+
+[$durumAd, $durumSinif] = HZ_DURUMLAR[$hizmet['status']] ?? [(string) $hizmet['status'], 'badge'];
+$adSoyad = trim((string) $hizmet['first_name'] . ' ' . (string) $hizmet['last_name']);
+$paraBirimi = (string) ($hizmet['currency'] ?: 'TRY');
+
+$vadeGun = null;
+if (!empty($hizmet['next_due_date'])) {
+    $vadeGun = (int) floor((strtotime((string) $hizmet['next_due_date']) - strtotime('today')) / 86400);
+}
+
+$faturaDurum = [
+    'draft' => ['Taslak', 'badge'], 'unpaid' => ['Ödenmedi', 'badge-warning'],
+    'paid' => ['Ödendi', 'badge-success'], 'cancelled' => ['İptal', 'badge'],
+    'refunded' => ['İade', 'badge-info'], 'collections' => ['Takipte', 'badge-danger'],
+];
+
+$pageTitle = (string) ($hizmet['urun'] ?: 'Hizmet');
+$currentPage = 'services';
+require_once __DIR__ . '/includes/header.php';
 ?>
 
-<?php if ($message): ?>
-    <div class="alert alert-success"><?= $message ?></div>
-<?php endif; ?>
+<style>
+    /* ==========================================
+       Hizmet detayı - hv
+       ========================================== */
+    .hv-duzen {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        gap: 18px;
+        align-items: start;
+    }
 
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+    .hv-panel {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
+
+    .hv-panel + .hv-panel {
+        margin-top: 18px;
+    }
+
+    .hv-panel-bas {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .hv-panel-bas h3 {
+        font-size: 12.5px;
+        font-weight: 700;
+    }
+
+    .hv-panel-govde {
+        padding: 16px;
+    }
+
+    .hv-ozet {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1px;
+        background: var(--y-cizgi);
+    }
+
+    .hv-ozet-kutu {
+        padding: 14px 16px;
+        background: var(--y-yuzey);
+    }
+
+    .hv-ozet-kutu b {
+        display: block;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--y-metin);
+        line-height: 1.3;
+    }
+
+    .hv-ozet-kutu span {
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .hv-ozet-kutu.gecmis b {
+        color: var(--y-danger);
+    }
+
+    .hv-ozet-kutu.yakin b {
+        color: var(--y-warning);
+    }
+
+    .hv-bilgi-satir {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+        font-size: 13px;
+    }
+
+    .hv-bilgi-satir:last-child {
+        border-bottom: none;
+    }
+
+    .hv-bilgi-satir span:first-child {
+        color: var(--y-metin-3);
+        white-space: nowrap;
+    }
+
+    .hv-bilgi-satir span:last-child {
+        text-align: right;
+        color: var(--y-metin);
+        word-break: break-word;
+    }
+
+    .hv-kod {
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 12.5px;
+    }
+
+    .hv-tablo {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .hv-tablo td {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+    }
+
+    .hv-tablo tr:last-child td {
+        border-bottom: none;
+    }
+
+    .hv-tablo tr:hover td {
+        background: var(--y-yuzey-2);
+    }
+
+    .hv-tablo b {
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .hv-tablo span {
+        display: block;
+        margin-top: 1px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .hv-sag {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .hv-bos {
+        padding: 24px 16px;
+        text-align: center;
+        font-size: 13px;
+        color: var(--y-metin-3);
+    }
+
+    .hv-form label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .hv-form .form-control {
+        margin-bottom: 10px;
+    }
+
+    .hv-form .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    @media (max-width: 980px) {
+        .hv-duzen {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
+</style>
+
+<div class="page-header">
     <div>
-        <a href="services.php" style="color: var(--gray); text-decoration: none; font-size: 14px;">← Hizmetlere Dön</a>
-        <h2 style="margin-top: 10px;"><?= htmlspecialchars($service['product_name'] ?? 'Hizmet') ?> #<?= $serviceId ?></h2>
+        <h1><?= htmlspecialchars((string) ($hizmet['urun'] ?: 'Ürün silinmiş')) ?></h1>
+        <p><a href="services.php">Hizmetler</a> &rsaquo;
+            <?= htmlspecialchars((string) ($hizmet['domain'] ?: '#' . $id)) ?></p>
     </div>
-    <div>
-        <?php
-        $statusBadge = match($service['status']) {
-            'active' => 'success',
-            'pending' => 'warning',
-            'suspended' => 'danger',
-            default => 'gray'
-        };
-        ?>
-        <span class="badge badge-<?= $statusBadge ?>" style="font-size: 14px; padding: 10px 20px;">
-            <?= ucfirst($service['status']) ?>
-        </span>
+    <div style="display:flex;gap:8px;align-items:center">
+        <span class="badge <?= $durumSinif ?>" style="font-size:12.5px;padding:7px 14px"><?= $durumAd ?></span>
+        <a href="service-edit.php?id=<?= $id ?>" class="btn btn-primary">
+            <i class="fas fa-pen"></i> Düzenle
+        </a>
     </div>
 </div>
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= htmlspecialchars($mesaj['tip']) ?>">
+        <?= htmlspecialchars($mesaj['metin']) ?>
+    </div>
+<?php endif; ?>
+
+<div class="hv-duzen">
     <div>
-        <!-- Hizmet Bilgileri -->
-        <div class="card">
-            <div class="card-header">
-                <h3>📦 Hizmet Bilgileri</h3>
-            </div>
-            <div class="card-body">
-                <table class="table">
-                    <tr>
-                        <td style="width: 200px;"><strong>Ürün</strong></td>
-                        <td><?= htmlspecialchars($service['product_name'] ?? '-') ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Domain/Hostname</strong></td>
-                        <td><?= htmlspecialchars($service['domain'] ?? '-') ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Kullanıcı Adı</strong></td>
-                        <td><?= htmlspecialchars($service['username'] ?? '-') ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Şifre</strong></td>
-                        <td>
-                            <?php if ($service['password']): ?>
-                            <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px; font-family: monospace;"><?= htmlspecialchars($service['password']) ?></code>
-                            <button type="button" onclick="copyToClipboard('<?= htmlspecialchars($service['password']) ?>')" class="btn btn-sm btn-outline" style="margin-left: 8px;">
-                                <i class="fas fa-copy"></i> Kopyala
-                            </button>
-                            <?php else: ?>
-                            <span style="color: var(--gray);">-</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><strong>Dedicated IP</strong></td>
-                        <td><?= htmlspecialchars($service['dedicated_ip'] ?? '-') ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Sunucu</strong></td>
-                        <td><?= $service['server_name'] ? htmlspecialchars($service['server_name'] . ' (' . $service['server_hostname'] . ')') : '-' ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Kayıt Tarihi</strong></td>
-                        <td><?= $service['registration_date'] ? date('d.m.Y', strtotime($service['registration_date'])) : '-' ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Sonraki Vade</strong></td>
-                        <td><?= $service['next_due_date'] ? date('d.m.Y', strtotime($service['next_due_date'])) : '-' ?></td>
-                    </tr>
-                </table>
-            </div>
-        </div>
-        
-        <!-- Kontrol Paneli Bilgileri -->
-        <?php if (!empty($moduleData['control_panel_url']) || !empty($moduleData['control_panel_user'])): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>🎛️ Kontrol Paneli Bilgileri</h3>
-            </div>
-            <div class="card-body">
-                <table class="table">
-                    <?php if (!empty($moduleData['control_panel_url'])): ?>
-                    <tr>
-                        <td style="width: 200px;"><strong>Panel URL</strong></td>
-                        <td><a href="<?= htmlspecialchars($moduleData['control_panel_url']) ?>" target="_blank"><?= htmlspecialchars($moduleData['control_panel_url']) ?></a></td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php if (!empty($moduleData['control_panel_user'])): ?>
-                    <tr>
-                        <td><strong>Panel Kullanıcı</strong></td>
-                        <td><?= htmlspecialchars($moduleData['control_panel_user']) ?></td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php if (!empty($moduleData['control_panel_pass'])): ?>
-                    <tr>
-                        <td><strong>Panel Şifre</strong></td>
-                        <td>
-                            <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px; font-family: monospace;"><?= htmlspecialchars($moduleData['control_panel_pass']) ?></code>
-                            <button type="button" onclick="copyToClipboard('<?= htmlspecialchars($moduleData['control_panel_pass']) ?>')" class="btn btn-sm btn-outline" style="margin-left: 8px;">
-                                <i class="fas fa-copy"></i> Kopyala
-                            </button>
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-                </table>
-            </div>
-        </div>
-        <?php endif; ?>
-        
-        <!-- FTP Bilgileri -->
-        <?php if (!empty($moduleData['ftp_host']) || !empty($moduleData['ftp_user'])): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>📁 FTP Bilgileri</h3>
-            </div>
-            <div class="card-body">
-                <table class="table">
-                    <?php if (!empty($moduleData['ftp_host'])): ?>
-                    <tr>
-                        <td style="width: 200px;"><strong>FTP Host</strong></td>
-                        <td><?= htmlspecialchars($moduleData['ftp_host']) ?></td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php if (!empty($moduleData['ftp_user'])): ?>
-                    <tr>
-                        <td><strong>FTP Kullanıcı</strong></td>
-                        <td><?= htmlspecialchars($moduleData['ftp_user']) ?></td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php if (!empty($moduleData['ftp_pass'])): ?>
-                    <tr>
-                        <td><strong>FTP Şifre</strong></td>
-                        <td>
-                            <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px; font-family: monospace;"><?= htmlspecialchars($moduleData['ftp_pass']) ?></code>
-                            <button type="button" onclick="copyToClipboard('<?= htmlspecialchars($moduleData['ftp_pass']) ?>')" class="btn btn-sm btn-outline" style="margin-left: 8px;">
-                                <i class="fas fa-copy"></i> Kopyala
-                            </button>
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php if (!empty($moduleData['ftp_port'])): ?>
-                    <tr>
-                        <td><strong>FTP Port</strong></td>
-                        <td><?= htmlspecialchars($moduleData['ftp_port']) ?></td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php if (!empty($moduleData['ssh_port'])): ?>
-                    <tr>
-                        <td><strong>SSH Port</strong></td>
-                        <td><?= htmlspecialchars($moduleData['ssh_port']) ?></td>
-                    </tr>
-                    <?php endif; ?>
-                </table>
-            </div>
-        </div>
-        <?php endif; ?>
-        
-        <!-- MySQL Bilgileri -->
-        <?php if (!empty($moduleData['mysql_host']) || !empty($moduleData['mysql_user'])): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>🗄️ MySQL Veritabanı</h3>
-            </div>
-            <div class="card-body">
-                <table class="table">
-                    <?php if (!empty($moduleData['mysql_host'])): ?>
-                    <tr>
-                        <td style="width: 200px;"><strong>MySQL Host</strong></td>
-                        <td><?= htmlspecialchars($moduleData['mysql_host']) ?></td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php if (!empty($moduleData['mysql_user'])): ?>
-                    <tr>
-                        <td><strong>MySQL Kullanıcı</strong></td>
-                        <td><?= htmlspecialchars($moduleData['mysql_user']) ?></td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php if (!empty($moduleData['mysql_pass'])): ?>
-                    <tr>
-                        <td><strong>MySQL Şifre</strong></td>
-                        <td>
-                            <code style="background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px; font-family: monospace;"><?= htmlspecialchars($moduleData['mysql_pass']) ?></code>
-                            <button type="button" onclick="copyToClipboard('<?= htmlspecialchars($moduleData['mysql_pass']) ?>')" class="btn btn-sm btn-outline" style="margin-left: 8px;">
-                                <i class="fas fa-copy"></i> Kopyala
-                            </button>
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-                </table>
-            </div>
-        </div>
-        <?php endif; ?>
-        
-        <!-- DNS Bilgileri -->
-        <?php if (!empty($moduleData['nameservers'])): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>🌐 DNS Bilgileri</h3>
-            </div>
-            <div class="card-body">
-                <div style="background: var(--bg-secondary); padding: 15px; border-radius: 8px; font-family: monospace; white-space: pre-line;">
-                    <?= htmlspecialchars($moduleData['nameservers']) ?>
+        <div class="hv-panel">
+            <div class="hv-ozet">
+                <div class="hv-ozet-kutu">
+                    <b><?= number_format((float) $hizmet['amount'], 2, ',', '.') ?> <?= $paraBirimi ?></b>
+                    <span><?= HZ_DONEMLER[$hizmet['billing_cycle']] ?? htmlspecialchars((string) $hizmet['billing_cycle']) ?></span>
+                </div>
+                <div class="hv-ozet-kutu <?= $vadeGun !== null && $vadeGun < 0 ? 'gecmis' : ($vadeGun !== null && $vadeGun <= 7 ? 'yakin' : '') ?>">
+                    <b><?= !empty($hizmet['next_due_date'])
+                        ? date('d.m.Y', strtotime((string) $hizmet['next_due_date'])) : '—' ?></b>
+                    <span><?php
+                        if ($vadeGun === null) {
+                            echo 'Vade yok';
+                        } elseif ($vadeGun < 0) {
+                            echo abs($vadeGun) . ' gün gecikti';
+                        } elseif ($vadeGun === 0) {
+                            echo 'Bugün';
+                        } else {
+                            echo $vadeGun . ' gün kaldı';
+                        }
+                    ?></span>
+                </div>
+                <div class="hv-ozet-kutu">
+                    <b><?= !empty($hizmet['registration_date'])
+                        ? date('d.m.Y', strtotime((string) $hizmet['registration_date'])) : '—' ?></b>
+                    <span>Kayıt tarihi</span>
+                </div>
+                <div class="hv-ozet-kutu">
+                    <b><?= count($faturalar) ?></b>
+                    <span>Fatura</span>
                 </div>
             </div>
         </div>
-        <?php endif; ?>
-        
-        <!-- Ek Bilgiler -->
-        <?php if (!empty($moduleData['extra_info'])): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>ℹ️ Ek Bilgiler</h3>
-            </div>
-            <div class="card-body">
-                <div style="white-space: pre-line;"><?= nl2br(htmlspecialchars($moduleData['extra_info'])) ?></div>
+
+        <div class="hv-panel">
+            <div class="hv-panel-bas"><h3>Hizmet bilgileri</h3></div>
+            <div class="hv-panel-govde">
+                <div class="hv-bilgi-satir">
+                    <span>Ürün</span>
+                    <span><?= htmlspecialchars((string) ($hizmet['urun'] ?: 'Ürün silinmiş')) ?>
+                        <?= !empty($hizmet['urun_tipi']) ? ' (' . htmlspecialchars((string) $hizmet['urun_tipi']) . ')' : '' ?></span>
+                </div>
+                <div class="hv-bilgi-satir">
+                    <span>Alan adı</span>
+                    <span class="hv-kod" dir="ltr"><?= htmlspecialchars((string) ($hizmet['domain'] ?: '—')) ?></span>
+                </div>
+                <?php if (!empty($hizmet['username'])): ?>
+                    <div class="hv-bilgi-satir">
+                        <span>Kullanıcı adı</span>
+                        <span class="hv-kod" dir="ltr"><?= htmlspecialchars((string) $hizmet['username']) ?></span>
+                    </div>
+                <?php endif; ?>
+                <?php if (!empty($hizmet['dedicated_ip'])): ?>
+                    <div class="hv-bilgi-satir">
+                        <span>IP adresi</span>
+                        <span class="hv-kod" dir="ltr"><?= htmlspecialchars((string) $hizmet['dedicated_ip']) ?></span>
+                    </div>
+                <?php endif; ?>
+                <div class="hv-bilgi-satir">
+                    <span>Sunucu</span>
+                    <span><?= htmlspecialchars((string) ($hizmet['sunucu'] ?: 'Atanmamış')) ?>
+                        <?= !empty($hizmet['sunucu_adres'])
+                            ? ' · ' . htmlspecialchars((string) $hizmet['sunucu_adres']) : '' ?></span>
+                </div>
+                <?php if (!empty($hizmet['vm_hostname']) || !empty($hizmet['esxi_vmid'])): ?>
+                    <div class="hv-bilgi-satir">
+                        <span>Sanal makine</span>
+                        <span class="hv-kod" dir="ltr">
+                            <?= htmlspecialchars((string) ($hizmet['vm_hostname'] ?: '—')) ?>
+                            <?= !empty($hizmet['esxi_vmid']) ? ' #' . htmlspecialchars((string) $hizmet['esxi_vmid']) : '' ?>
+                        </span>
+                    </div>
+                <?php endif; ?>
+                <?php if (!empty($hizmet['termination_date'])): ?>
+                    <div class="hv-bilgi-satir">
+                        <span>Sonlandırma</span>
+                        <span><?= date('d.m.Y', strtotime((string) $hizmet['termination_date'])) ?></span>
+                    </div>
+                <?php endif; ?>
+                <?php foreach ($modulVerisi as $anahtar => $deger): ?>
+                    <?php if (is_scalar($deger)): ?>
+                        <div class="hv-bilgi-satir">
+                            <span><?= htmlspecialchars((string) $anahtar) ?></span>
+                            <span><?= htmlspecialchars((string) $deger) ?></span>
+                        </div>
+                    <?php endif; ?>
+                <?php endforeach; ?>
             </div>
         </div>
-        <?php endif; ?>
-        
-        <!-- Faturalama -->
-        <div class="card">
-            <div class="card-header">
-                <h3>💰 Faturalama</h3>
-            </div>
-            <div class="card-body">
-                <table class="table">
-                    <tr>
-                        <td style="width: 200px;"><strong>Faturalama Dönemi</strong></td>
-                        <td><?= ucfirst($service['billing_cycle']) ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Tutar</strong></td>
-                        <td><strong><?= number_format((float)$service['amount'], 2) ?> <?= $service['currency'] ?></strong></td>
-                    </tr>
-                </table>
-            </div>
-        </div>
-        
-        <!-- Faturalar -->
-        <?php if (!empty($invoices)): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>📄 İlgili Faturalar</h3>
-            </div>
-            <div class="card-body">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Fatura #</th>
-                            <th>Tarih</th>
-                            <th>Tutar</th>
-                            <th>Durum</th>
-                            <th>İşlem</th>
-                        </tr>
-                    </thead>
+
+        <div class="hv-panel">
+            <div class="hv-panel-bas"><h3>Faturalar</h3></div>
+            <?php if (!$faturalar): ?>
+                <div class="hv-bos">Bu hizmete ait fatura yok.</div>
+            <?php else: ?>
+                <table class="hv-tablo">
                     <tbody>
-                        <?php foreach ($invoices as $invoice): ?>
-                        <tr>
-                            <td><?= htmlspecialchars($invoice['invoice_number']) ?></td>
-                            <td><?= date('d.m.Y', strtotime($invoice['created_at'])) ?></td>
-                            <td><?= number_format((float)$invoice['total'], 2) ?> <?= $invoice['currency'] ?></td>
-                            <td>
-                                <?php
-                                $iBadge = match($invoice['status']) {
-                                    'paid' => 'success',
-                                    'unpaid' => 'warning',
-                                    default => 'gray'
-                                };
-                                ?>
-                                <span class="badge badge-<?= $iBadge ?>"><?= ucfirst($invoice['status']) ?></span>
-                            </td>
-                            <td>
-                                <a href="invoice-view.php?id=<?= $invoice['id'] ?>" class="btn btn-sm btn-outline">Görüntüle</a>
-                            </td>
-                        </tr>
+                        <?php foreach ($faturalar as $f):
+                            [$dAd, $dSinif] = $faturaDurum[$f['status']] ?? [(string) $f['status'], 'badge'];
+                            ?>
+                            <tr>
+                                <td>
+                                    <b><a href="invoice-view.php?id=<?= (int) $f['id'] ?>">
+                                        <?= htmlspecialchars((string) $f['invoice_number']) ?></a></b>
+                                    <span><?= date('d.m.Y', strtotime((string) $f['created_at'])) ?></span>
+                                </td>
+                                <td class="hv-sag"><b><?= number_format((float) $f['total'], 2, ',', '.') ?>
+                                        <?= htmlspecialchars((string) ($f['currency'] ?: $paraBirimi)) ?></b></td>
+                                <td class="hv-sag"><span class="badge <?= $dSinif ?>"><?= $dAd ?></span></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($talepler): ?>
+            <div class="hv-panel">
+                <div class="hv-panel-bas"><h3>Destek talepleri</h3></div>
+                <table class="hv-tablo">
+                    <tbody>
+                        <?php foreach ($talepler as $t): ?>
+                            <tr>
+                                <td>
+                                    <b><a href="ticket-view.php?id=<?= (int) $t['id'] ?>">
+                                        <?= htmlspecialchars(mb_strimwidth((string) $t['subject'], 0, 56, '…')) ?></a></b>
+                                    <span><?= date('d.m.Y H:i', strtotime((string) $t['updated_at'])) ?></span>
+                                </td>
+                                <td class="hv-sag"><span class="badge"><?= htmlspecialchars((string) $t['status']) ?></span></td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
-        </div>
-        <?php endif; ?>
-        
-        <!-- Notlar -->
-        <?php if ($service['notes'] || $service['admin_notes']): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>📝 Notlar</h3>
-            </div>
-            <div class="card-body">
-                <?php if ($service['admin_notes']): ?>
-                    <div style="background: #fef3c7; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
-                        <strong>Admin Notu:</strong><br>
-                        <?= nl2br(htmlspecialchars($service['admin_notes'])) ?>
-                    </div>
-                <?php endif; ?>
-                <?php if ($service['notes']): ?>
-                    <div>
-                        <strong>Müşteri Notu:</strong><br>
-                        <?= nl2br(htmlspecialchars($service['notes'])) ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
         <?php endif; ?>
     </div>
-    
+
     <div>
-        <!-- Müşteri -->
-        <div class="card">
-            <div class="card-header">
-                <h3>👤 Müşteri</h3>
-            </div>
-            <div class="card-body">
-                <p><strong><?= htmlspecialchars($service['first_name'] . ' ' . $service['last_name']) ?></strong></p>
-                <p><a href="mailto:<?= htmlspecialchars($service['email']) ?>"><?= htmlspecialchars($service['email']) ?></a></p>
-                <?php if ($service['phone']): ?>
-                    <p><?= htmlspecialchars($service['phone']) ?></p>
-                <?php endif; ?>
-                <hr style="border: none; border-top: 1px solid var(--border); margin: 15px 0;">
-                <a href="client-edit.php?id=<?= $service['client_id'] ?>" class="btn btn-sm btn-outline" style="width: 100%;">Müşteri Profiline Git</a>
-            </div>
-        </div>
-        
-        <!-- Durum Güncelle -->
-        <div class="card">
-            <div class="card-header">
-                <h3>⚙️ Durum Yönetimi</h3>
-            </div>
-            <div class="card-body">
+        <div class="hv-panel">
+            <div class="hv-panel-bas"><h3>Durum değiştir</h3></div>
+            <div class="hv-panel-govde hv-form">
                 <form method="POST">
-                    <div class="form-group">
-                        <label>Durum</label>
-                        <select name="status" class="form-control">
-                            <option value="pending" <?= $service['status'] === 'pending' ? 'selected' : '' ?>>Beklemede</option>
-                            <option value="active" <?= $service['status'] === 'active' ? 'selected' : '' ?>>Aktif</option>
-                            <option value="suspended" <?= $service['status'] === 'suspended' ? 'selected' : '' ?>>Askıda</option>
-                            <option value="terminated" <?= $service['status'] === 'terminated' ? 'selected' : '' ?>>Sonlandırılmış</option>
-                            <option value="cancelled" <?= $service['status'] === 'cancelled' ? 'selected' : '' ?>>İptal</option>
-                        </select>
+                    <label for="durum">Yeni durum</label>
+                    <select name="durum" id="durum" class="form-control" onchange="hvGerekce(this.value)">
+                        <?php foreach (HZ_DURUMLAR as $deger => [$ad, $sinif]): ?>
+                            <option value="<?= $deger ?>" <?= $hizmet['status'] === $deger ? 'selected' : '' ?>>
+                                <?= $ad ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div id="hv-gerekce-alani" hidden>
+                        <label for="gerekce">Gerekçe (müşteriye gider)</label>
+                        <input type="text" name="gerekce" id="gerekce" class="form-control" maxlength="200"
+                            placeholder="Ödeme bekleniyor">
                     </div>
-                    <button type="submit" class="btn btn-primary" style="width: 100%;">Güncelle</button>
+                    <button type="submit" class="btn btn-primary">Durumu kaydet</button>
                 </form>
             </div>
         </div>
-        
-        <!-- ESXi VM Atama -->
-        <?php if (!empty($esxiServers)): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3>🔌 ESXi VM Atama</h3>
-            </div>
-            <div class="card-body">
-                <form method="POST">
-                    <input type="hidden" name="update_esxi" value="1">
-                    <div class="form-group">
-                        <label>ESXi Sunucu</label>
-                        <select name="esxi_server_id" class="form-control">
-                            <option value="">-- Seçiniz --</option>
-                            <?php foreach ($esxiServers as $esxiSrv): ?>
-                                <option value="<?= $esxiSrv['id'] ?>" <?= ($service['esxi_server_id'] ?? '') == $esxiSrv['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($esxiSrv['name']) ?> (<?= $esxiSrv['ip_address'] ?>)
+
+        <?php if ($esxiSunuculari): ?>
+            <div class="hv-panel">
+                <div class="hv-panel-bas"><h3>ESXi eşlemesi</h3></div>
+                <div class="hv-panel-govde hv-form">
+                    <form method="POST">
+                        <input type="hidden" name="esxi_kaydet" value="1">
+                        <label for="esxi_server_id">Sunucu</label>
+                        <select name="esxi_server_id" id="esxi_server_id" class="form-control">
+                            <option value="0">Seçilmedi</option>
+                            <?php foreach ($esxiSunuculari as $s): ?>
+                                <option value="<?= (int) $s['id'] ?>"
+                                    <?= (int) $hizmet['esxi_server_id'] === (int) $s['id'] ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars((string) $s['name']) ?>
+                                    (<?= htmlspecialchars((string) $s['ip_address']) ?>)
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                        <label for="esxi_vmid">VM kimliği</label>
+                        <input type="text" name="esxi_vmid" id="esxi_vmid" class="form-control" maxlength="64"
+                            value="<?= htmlspecialchars((string) ($hizmet['esxi_vmid'] ?? '')) ?>">
+                        <label for="vm_hostname">VM adı</label>
+                        <input type="text" name="vm_hostname" id="vm_hostname" class="form-control" maxlength="120"
+                            value="<?= htmlspecialchars((string) ($hizmet['vm_hostname'] ?? '')) ?>">
+                        <button type="submit" class="btn btn-outline">Eşlemeyi kaydet</button>
+                    </form>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <div class="hv-panel">
+            <div class="hv-panel-bas"><h3>Müşteri</h3></div>
+            <div class="hv-panel-govde">
+                <div class="hv-bilgi-satir">
+                    <span>Ad soyad</span>
+                    <span><?= htmlspecialchars($adSoyad !== '' ? $adSoyad : 'Müşteri silinmiş') ?></span>
+                </div>
+                <div class="hv-bilgi-satir">
+                    <span>E-posta</span>
+                    <span><a href="mailto:<?= htmlspecialchars((string) $hizmet['email']) ?>" dir="ltr"
+                            style="color:var(--y-primary)"><?= htmlspecialchars((string) $hizmet['email']) ?></a></span>
+                </div>
+                <?php if (!empty($hizmet['phone'])): ?>
+                    <div class="hv-bilgi-satir">
+                        <span>Telefon</span>
+                        <span dir="ltr"><?= htmlspecialchars((string) $hizmet['phone']) ?></span>
                     </div>
-                    <div class="form-group">
-                        <label>VM ID</label>
-                        <input type="text" name="esxi_vmid" class="form-control" 
-                               value="<?= htmlspecialchars($service['esxi_vmid'] ?? '') ?>" 
-                               placeholder="Örn: 1, 2, 3...">
-                        <small style="color: var(--gray);">vim-cmd vmsvc/getallvms ile alınır</small>
-                    </div>
-                    <div class="form-group">
-                        <label>VM Hostname</label>
-                        <input type="text" name="vm_hostname" class="form-control" 
-                               value="<?= htmlspecialchars($service['vm_hostname'] ?? '') ?>" 
-                               placeholder="Opsiyonel">
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="width: 100%;">💾 Kaydet</button>
-                </form>
-                
-                <?php if (!empty($service['esxi_server_id']) && !empty($service['esxi_vmid'])): ?>
-                <hr style="border: none; border-top: 1px solid var(--border); margin: 15px 0;">
-                <a href="esxi-vms.php?server=<?= $service['esxi_server_id'] ?>" class="btn btn-outline btn-sm" style="width: 100%;">
-                    🖥️ ESXi Sunucusunu Görüntüle
-                </a>
+                <?php endif; ?>
+                <?php if (!empty($hizmet['client_id'])): ?>
+                    <a href="client-view.php?id=<?= (int) $hizmet['client_id'] ?>"
+                        class="btn btn-sm btn-outline" style="width:100%;justify-content:center;margin-top:12px">
+                        Müşteri kartı
+                    </a>
                 <?php endif; ?>
             </div>
         </div>
-        <?php endif; ?>
-        
-        <!-- Hızlı İşlemler -->
-        <div class="card">
-            <div class="card-header">
-                <h3>⚡ Hızlı İşlemler</h3>
-            </div>
-            <div class="card-body">
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <a href="service-edit.php?id=<?= $serviceId ?>" class="btn btn-primary">
-                        <i class="fas fa-edit"></i> Hizmeti Düzenle
-                    </a>
-                    <a href="#" class="btn btn-outline">📄 Fatura Oluştur</a>
-                    <a href="#" class="btn btn-outline">📧 E-posta Gönder</a>
-                    <?php if ($service['status'] === 'active'): ?>
-                        <a href="#" class="btn btn-warning" onclick="return confirm('Hizmeti askıya almak istediğinizden emin misiniz?')">⏸️ Askıya Al</a>
-                    <?php elseif ($service['status'] === 'suspended'): ?>
-                        <a href="#" class="btn btn-success">▶️ Aktif Et</a>
-                    <?php endif; ?>
+
+        <?php if (!empty($hizmet['admin_notes'])): ?>
+            <div class="hv-panel">
+                <div class="hv-panel-bas"><h3>Yönetici notu</h3></div>
+                <div class="hv-panel-govde"
+                    style="font-size:13px;line-height:1.65;color:var(--y-metin-2)">
+                    <?= nl2br(htmlspecialchars((string) $hizmet['admin_notes'])) ?>
                 </div>
             </div>
-        </div>
+        <?php endif; ?>
     </div>
 </div>
 
 <script>
-function copyToClipboard(text) {
-    const btn = event.target.closest('button');
-    navigator.clipboard.writeText(text).then(function() {
-        // Görsel feedback
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i> Kopyalandı!';
-        btn.style.background = '#10b981';
-        btn.style.color = '#fff';
-        
-        setTimeout(function() {
-            btn.innerHTML = originalHTML;
-            btn.style.background = '';
-            btn.style.color = '';
-        }, 2000);
-    }).catch(function(err) {
-        alert('Kopyalama başarısız: ' + err);
-    });
-}
+    /* Gerekçe kutusu yalnızca müşteriye bildirim giden durumlarda görünür */
+    function hvGerekce(deger) {
+        document.getElementById('hv-gerekce-alani').hidden =
+            deger !== 'suspended' && deger !== 'terminated';
+    }
+    hvGerekce(document.getElementById('durum').value);
 </script>
 
-<?php include 'includes/footer.php'; ?>
-
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
