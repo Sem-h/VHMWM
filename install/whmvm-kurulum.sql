@@ -64,7 +64,7 @@ CREATE TABLE `admins` (
   UNIQUE KEY `email` (`email`),
   KEY `idx_role` (`role`),
   KEY `idx_active` (`is_active`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `affiliate_commissions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -194,7 +194,7 @@ CREATE TABLE `bank_accounts` (
   PRIMARY KEY (`id`),
   KEY `idx_active` (`is_active`),
   KEY `idx_order` (`display_order`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_transfer_payments`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -538,7 +538,7 @@ CREATE TABLE `esxi_logs` (
   KEY `idx_service` (`service_id`),
   KEY `idx_action` (`action`),
   KEY `idx_created` (`created_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `esxi_servers`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -562,7 +562,7 @@ CREATE TABLE `esxi_servers` (
   PRIMARY KEY (`id`),
   KEY `idx_active` (`is_active`),
   KEY `idx_status` (`last_status`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `hizmet_mahalleleri`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

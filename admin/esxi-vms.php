@@ -5,6 +5,7 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
+require_once dirname(__DIR__) . '/includes/Sifreleme.php';
 require_once dirname(__DIR__) . '/includes/Settings.php';
 require_once dirname(__DIR__) . '/includes/ESXi.php';
 session_name(SESSION_NAME); session_start();
@@ -21,8 +22,9 @@ if (!$serverId) {
 }
 
 // Şifre çözme
-function decryptPassword(string $encrypted): string {
-    return openssl_decrypt(base64_decode($encrypted), 'AES-256-CBC', SITE_NAME, 0, str_pad(substr(SITE_NAME, 0, 16), 16, '0')) ?: '';
+function decryptPassword(string $encrypted): string
+{
+    return Sifreleme::coz($encrypted);
 }
 
 // Sunucu bilgisi
