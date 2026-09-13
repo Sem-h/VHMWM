@@ -1,15 +1,24 @@
 <?php
 /**
- * WHMVM - Admin Fatura Yönetimi
+ * VHM - Faturalar
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - cancel_invoice, delete_invoice ve mark_paid POST ile çalışıyordu
+ *     ama CSRF belirteci doğrulanmıyordu.
+ *   - mark_paid'de fatura varlığı denetlenmiyordu; kayıt yoksa
+ *     $invoice['total'] okunurken hata veriyordu.
+ *   - Fatura ödendi işaretlendiğinde transactions tablosuna hiçbir kayıt
+ *     düşmüyordu; projede bu tabloya INSERT yapan tek bir satır yoktu,
+ *     bu yüzden Ödemeler sayfası hep boştu.
+ *   - Fatura güncellemesi, komisyon, log ve e-posta ardışık çalışıyordu;
+ *     ortada hata olursa yarım kalıyordu. Artık para işlemleri tek işlem.
+ *   - PRG yoktu; yenilemede aynı işlem tekrar uygulanıyordu.
  */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-require_once dirname(__DIR__) . '/includes/Settings.php';
-require_once dirname(__DIR__) . '/includes/Mail.php';
-require_once dirname(__DIR__) . '/includes/ClientLog.php';
-require_once dirname(__DIR__) . '/includes/Affiliate.php';
-require_once dirname(__DIR__) . '/includes/OrderLog.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
@@ -21,1116 +30,639 @@ if (!isset($_SESSION['admin_id'])) {
 $pageTitle = 'Faturalar';
 $currentPage = 'invoices';
 
-// İşlemler
-$message = '';
-$messageType = '';
-
-// İptal işlemi
-if (isset($_POST['cancel_invoice'])) {
-    $invoiceId = (int)$_POST['invoice_id'];
-    Database::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?", [$invoiceId]);
-    $message = 'Fatura iptal edildi.';
-    $messageType = 'warning';
-}
-
-// Silme işlemi
-if (isset($_POST['delete_invoice'])) {
-    $invoiceId = (int)$_POST['invoice_id'];
-    // Önce fatura kalemlerini sil
-    Database::query("DELETE FROM invoice_items WHERE invoice_id = ?", [$invoiceId]);
-    // Sonra faturayı sil
-    Database::query("DELETE FROM invoices WHERE id = ?", [$invoiceId]);
-    $message = 'Fatura kalıcı olarak silindi.';
-    $messageType = 'success';
-}
-
-// Ödendi olarak işaretle
-if (isset($_POST['mark_paid'])) {
-    $invoiceId = (int)$_POST['invoice_id'];
-    $invoice = Database::fetch("
-        SELECT i.*, c.first_name, c.last_name, c.email 
-        FROM invoices i 
-        LEFT JOIN clients c ON i.client_id = c.id 
-        WHERE i.id = ?
-    ", [$invoiceId]);
-    
-    Database::query("UPDATE invoices SET status = 'paid', amount_paid = ?, paid_date = NOW() WHERE id = ?", [$invoice['total'], $invoiceId]);
-    
-    // Affiliate komisyonu hesapla
-    try {
-        Affiliate::processCommission(
-            (int)$invoice['client_id'],
-            null,
-            $invoiceId,
-            (float)$invoice['total']
-        );
-    } catch (Throwable $e) {
-        // Affiliate hatası işlemi engellemesin
-    }
-    
-    // Müşteri logu - Fatura ödendi
-    ClientLog::invoicePaid(
-        (int)$invoice['client_id'], 
-        $invoice['invoice_number'], 
-        (float)$invoice['total'], 
-        $invoice['currency'] ?? 'TRY'
-    );
-    
-    // Sipariş logu - Ödeme alındı
-    // Fatura ile ilişkili siparişi bul
-    $orderId = Database::fetchColumn("SELECT order_id FROM invoices WHERE id = ?", [$invoiceId]);
-    if ($orderId) {
-        OrderLog::paymentReceived((int)$orderId, (float)$invoice['total'], (int)$invoice['client_id']);
-    }
-    
-    // Müşteriye ödeme bildirimi gönder
-    try {
-        Mail::sendTemplate('invoice_paid', $invoice['email'], [
-            'client_name' => $invoice['first_name'] . ' ' . $invoice['last_name'],
-            'invoice_id' => $invoice['invoice_number'],
-            'payment_amount' => number_format($invoice['total'], 2, ',', '.'),
-            'payment_date' => date('d.m.Y H:i'),
-            'transaction_id' => 'TRX-' . $invoiceId . '-' . date('YmdHis')
-        ], $invoice['first_name']);
-    } catch (Throwable $e) {
-        // Mail hatası işlemi engellemesin
-    }
-    
-    $message = 'Fatura ödendi olarak işaretlendi.';
-    $messageType = 'success';
-}
-
-// Sayfalama
-$page = max(1, (int)($_GET['page'] ?? 1));
-$perPage = 20;
-$offset = ($page - 1) * $perPage;
-
-$statusFilter = $_GET['status'] ?? '';
-$searchQuery = $_GET['search'] ?? '';
-
-$where = "WHERE 1=1";
-$params = [];
-
-if ($statusFilter) {
-    $where .= " AND i.status = ?";
-    $params[] = $statusFilter;
-}
-
-if ($searchQuery) {
-    $where .= " AND (i.invoice_number LIKE ? OR c.first_name LIKE ? OR c.last_name LIKE ? OR c.email LIKE ?)";
-    $searchParam = "%$searchQuery%";
-    $params = array_merge($params, [$searchParam, $searchParam, $searchParam, $searchParam]);
-}
-
-$total = (int)Database::fetchColumn("SELECT COUNT(*) FROM invoices i LEFT JOIN clients c ON i.client_id = c.id $where", $params);
-$totalPages = (int)ceil($total / $perPage);
-
-$invoices = Database::fetchAll("
-    SELECT i.*, c.first_name, c.last_name, c.email, c.company_name
-    FROM invoices i 
-    LEFT JOIN clients c ON i.client_id = c.id 
-    $where
-    ORDER BY i.created_at DESC 
-    LIMIT $perPage OFFSET $offset
-", $params);
-
-// İstatistikler
-$stats = [
-    'total' => (int)Database::fetchColumn("SELECT COUNT(*) FROM invoices"),
-    'unpaid' => (int)Database::fetchColumn("SELECT COUNT(*) FROM invoices WHERE status = 'unpaid'"),
-    'paid' => (int)Database::fetchColumn("SELECT COUNT(*) FROM invoices WHERE status = 'paid'"),
-    'cancelled' => (int)Database::fetchColumn("SELECT COUNT(*) FROM invoices WHERE status = 'cancelled'"),
-    'totalUnpaid' => (float)Database::fetchColumn("SELECT COALESCE(SUM(total - amount_paid), 0) FROM invoices WHERE status = 'unpaid'"),
-    'totalPaid' => (float)Database::fetchColumn("SELECT COALESCE(SUM(amount_paid), 0) FROM invoices WHERE status = 'paid'"),
-    'overdue' => (int)Database::fetchColumn("SELECT COUNT(*) FROM invoices WHERE status = 'unpaid' AND due_date < CURDATE()")
+/* invoices.status enum'u ile birebir aynı */
+$durumlar = [
+    'draft' => ['Taslak', 'badge'],
+    'unpaid' => ['Ödenmedi', 'badge-warning'],
+    'paid' => ['Ödendi', 'badge-success'],
+    'cancelled' => ['İptal', 'badge'],
+    'refunded' => ['İade', 'badge-info'],
+    'collections' => ['Takipte', 'badge-danger'],
 ];
 
-include 'includes/header.php';
+function faturaMesaj(string $tip, string $metin): void
+{
+    $_SESSION['fat_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: invoices.php');
+    exit;
+}
+
+/* ---------- Ödendi işaretle ---------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['odendi'])) {
+    Guvenlik::zorunlu();
+    $id = (int) ($_POST['invoice_id'] ?? 0);
+
+    $fatura = Database::fetch(
+        "SELECT i.*, c.first_name, c.last_name, c.email
+           FROM invoices i
+           LEFT JOIN clients c ON c.id = i.client_id
+          WHERE i.id = ?",
+        [$id]
+    );
+
+    /* Kayıt yoksa eskiden $invoice['total'] okunurken hata veriyordu */
+    if (!$fatura) {
+        faturaMesaj('error', 'Fatura bulunamadı.');
+    }
+    if ($fatura['status'] === 'paid') {
+        faturaMesaj('uyari', 'Bu fatura zaten ödenmiş görünüyor.');
+    }
+
+    $yontem = (string) ($_POST['yontem'] ?? $fatura['payment_method'] ?? 'bank_transfer');
+    $tutar = (float) $fatura['total'];
+    $db = Database::getInstance();
+
+    try {
+        $db->beginTransaction();
+
+        Database::query(
+            "UPDATE invoices SET status = 'paid', amount_paid = ?, paid_date = NOW(),
+                    payment_method = ? WHERE id = ?",
+            [$tutar, $yontem, $id]
+        );
+
+        /* Ödeme kaydı. Bu satır olmadığı için Ödemeler sayfası hiç
+           veri görmüyordu. */
+        Database::insert('transactions', [
+            'client_id' => (int) $fatura['client_id'],
+            'invoice_id' => $id,
+            'transaction_id' => 'MAN-' . $id . '-' . date('YmdHis'),
+            'gateway' => $yontem,
+            'type' => 'payment',
+            'amount' => $tutar,
+            'currency' => (string) ($fatura['currency'] ?: 'TRY'),
+            'status' => 'success',
+            'description' => 'Fatura ' . $fatura['invoice_number'] . ' panelden ödendi olarak işaretlendi.',
+        ]);
+
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('Fatura ödendi işaretlenemedi: ' . $e->getMessage());
+        faturaMesaj('error', 'Fatura güncellenemedi, hiçbir değişiklik kaydedilmedi.');
+    }
+
+    /* Aşağıdakiler para işlemi değil; biri patlarsa fatura yine ödenmiş kalır */
+    try {
+        require_once dirname(__DIR__) . '/includes/Affiliate.php';
+        Affiliate::processCommission((int) $fatura['client_id'], null, $id, $tutar);
+    } catch (Throwable $e) {
+        error_log('Satış ortaklığı komisyonu işlenemedi: ' . $e->getMessage());
+    }
+
+    try {
+        require_once dirname(__DIR__) . '/includes/ClientLog.php';
+        ClientLog::invoicePaid(
+            (int) $fatura['client_id'],
+            (string) $fatura['invoice_number'],
+            $tutar,
+            (string) ($fatura['currency'] ?? 'TRY')
+        );
+    } catch (Throwable $e) {
+        error_log('Müşteri logu yazılamadı: ' . $e->getMessage());
+    }
+
+    if (!empty($fatura['email'])) {
+        try {
+            require_once dirname(__DIR__) . '/includes/Mail.php';
+            Mail::sendTemplate('invoice_paid', (string) $fatura['email'], [
+                'client_name' => trim((string) $fatura['first_name'] . ' ' . (string) $fatura['last_name']),
+                'invoice_id' => (string) $fatura['invoice_number'],
+                'payment_amount' => number_format($tutar, 2, ',', '.'),
+                'payment_date' => date('d.m.Y H:i'),
+            ], (string) $fatura['first_name']);
+        } catch (Throwable $e) {
+            error_log('Ödeme bildirimi gönderilemedi: ' . $e->getMessage());
+        }
+    }
+
+    faturaMesaj('success', $fatura['invoice_number'] . ' ödendi olarak işaretlendi ve ödeme kaydı oluşturuldu.');
+}
+
+/* ---------- İptal ---------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['iptal'])) {
+    Guvenlik::zorunlu();
+    $id = (int) ($_POST['invoice_id'] ?? 0);
+
+    try {
+        Database::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?", [$id]);
+        faturaMesaj('uyari', 'Fatura iptal edildi.');
+    } catch (Throwable $e) {
+        error_log('Fatura iptal edilemedi: ' . $e->getMessage());
+        faturaMesaj('error', 'Fatura iptal edilemedi.');
+    }
+}
+
+/* ---------- Silme ---------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['fatura_sil'])) {
+    Guvenlik::zorunlu();
+    $id = (int) ($_POST['invoice_id'] ?? 0);
+
+    try {
+        /* invoice_items zaten ON DELETE CASCADE; elle silmeye gerek yok */
+        Database::query("DELETE FROM invoices WHERE id = ?", [$id]);
+        faturaMesaj('success', 'Fatura silindi.');
+    } catch (Throwable $e) {
+        error_log('Fatura silinemedi: ' . $e->getMessage());
+        faturaMesaj('error', 'Fatura silinemedi.');
+    }
+}
+
+$mesaj = null;
+if (!empty($_SESSION['fat_mesaj'])) {
+    $mesaj = $_SESSION['fat_mesaj'];
+    unset($_SESSION['fat_mesaj']);
+}
+
+/* ---------- Süzme ---------- */
+$suzgec = (string) ($_GET['status'] ?? '');
+$arama = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+
+$kosul = [];
+$par = [];
+if (isset($durumlar[$suzgec])) {
+    $kosul[] = "i.status = ?";
+    $par[] = $suzgec;
+} elseif ($suzgec === 'gecikmis') {
+    $kosul[] = "i.status = 'unpaid' AND i.due_date < CURDATE()";
+}
+if ($arama !== '') {
+    $kosul[] = "(i.invoice_number LIKE ? OR c.first_name LIKE ? OR c.last_name LIKE ? OR c.email LIKE ?)";
+    $desen = '%' . str_replace(['%', '_'], ['\%', '\_'], $arama) . '%';
+    $par = array_merge($par, array_fill(0, 4, $desen));
+}
+$nerede = $kosul ? ' WHERE ' . implode(' AND ', $kosul) : '';
+
+$sayfa = max(1, (int) ($_GET['page'] ?? 1));
+$adet = 20;
+$atla = ($sayfa - 1) * $adet;
+
+$guvenliSayi = static function (string $sql, array $p = []): float {
+    try {
+        return (float) Database::fetchColumn($sql, $p);
+    } catch (Throwable $e) {
+        error_log('Fatura sorgusu: ' . $e->getMessage());
+        return 0;
+    }
+};
+
+$toplam = (int) $guvenliSayi(
+    "SELECT COUNT(*) FROM invoices i LEFT JOIN clients c ON c.id = i.client_id" . $nerede,
+    $par
+);
+$sayfaSayisi = max(1, (int) ceil($toplam / $adet));
+
+try {
+    $faturalar = Database::fetchAll(
+        "SELECT i.*, c.first_name, c.last_name, c.email
+           FROM invoices i
+           LEFT JOIN clients c ON c.id = i.client_id
+           {$nerede}
+          ORDER BY i.created_at DESC
+          LIMIT {$adet} OFFSET {$atla}",
+        $par
+    );
+} catch (Throwable $e) {
+    error_log('Fatura listesi okunamadı: ' . $e->getMessage());
+    $faturalar = [];
+}
+
+$ozet = [
+    ['Tüm faturalar', $guvenliSayi("SELECT COUNT(*) FROM invoices"), 'fa-file-invoice', '', false],
+    ['Ödenmedi', $guvenliSayi("SELECT COUNT(*) FROM invoices WHERE status = 'unpaid'"), 'fa-clock', 'unpaid', false],
+    ['Gecikmiş', $guvenliSayi("SELECT COUNT(*) FROM invoices WHERE status = 'unpaid' AND due_date < CURDATE()"), 'fa-triangle-exclamation', 'gecikmis', false],
+    ['Açık alacak', $guvenliSayi("SELECT COALESCE(SUM(total - amount_paid),0) FROM invoices WHERE status = 'unpaid'"), 'fa-turkish-lira-sign', 'unpaid', true],
+];
+
+$odemeYontemi = [
+    'bank_transfer' => 'Havale / EFT',
+    'paytr' => 'PayTR',
+    'credit_card' => 'Kredi kartı',
+    'cash' => 'Nakit',
+    'credit' => 'Bakiye',
+];
+
+require_once __DIR__ . '/includes/header.php';
 ?>
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
 <style>
-/* Page Header */
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-    flex-wrap: wrap;
-    gap: 20px;
-}
-
-.page-header h1 {
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--dark);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.page-header h1 i {
-    color: var(--primary);
-}
-
-.header-actions {
-    display: flex;
-    gap: 12px;
-}
-
-/* Stats Grid */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
-    margin-bottom: 30px;
-}
-
-.stat-card {
-    background: var(--y-yuzey);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 24px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    transition: all 0.3s;
-}
-
-.stat-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-}
-
-.stat-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-}
-
-.stat-icon.blue { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
-.stat-icon.orange { background: linear-gradient(135deg, #f97316, #ea580c); color: white; }
-.stat-icon.green { background: linear-gradient(135deg, #22c55e, #16a34a); color: white; }
-.stat-icon.red { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
-
-.stat-info h3 {
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--dark);
-    margin-bottom: 4px;
-}
-
-.stat-info span {
-    font-size: 13px;
-    color: var(--gray);
-}
-
-.stat-info .money {
-    font-size: 14px;
-    color: var(--primary);
-    font-weight: 600;
-}
-
-/* Filter Bar */
-.filter-bar {
-    background: var(--y-yuzey);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 24px;
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.filter-tabs {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.filter-tab {
-    padding: 10px 20px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 500;
-    text-decoration: none;
-    color: var(--gray);
-    background: var(--light);
-    border: 1px solid transparent;
-    transition: all 0.3s;
-}
-
-.filter-tab:hover {
-    color: var(--primary);
-    background: rgba(99, 102, 241, 0.1);
-}
-
-.filter-tab.active {
-    color: white;
-    background: var(--primary);
-}
-
-.filter-tab .count {
-    display: inline-block;
-    padding: 2px 8px;
-    background: rgba(255,255,255,0.2);
-    border-radius: 10px;
-    font-size: 12px;
-    margin-left: 6px;
-}
-
-.filter-tab:not(.active) .count {
-    background: var(--border);
-}
-
-.search-box {
-    flex: 1;
-    min-width: 250px;
-    position: relative;
-}
-
-.search-box input {
-    width: 100%;
-    padding: 12px 16px 12px 44px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-size: 14px;
-    transition: all 0.3s;
-}
-
-.search-box input:focus {
-    border-color: var(--primary);
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-}
-
-.search-box i {
-    position: absolute;
-    left: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--gray);
-}
-
-/* Invoice Table */
-.invoice-card {
-    background: var(--y-yuzey);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    overflow: hidden;
-}
-
-.invoice-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.invoice-table th {
-    background: linear-gradient(135deg, var(--y-yuzey-2), var(--y-yuzey-2));
-    padding: 16px 20px;
-    text-align: left;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--gray);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border);
-}
-
-.invoice-table td {
-    padding: 18px 20px;
-    border-bottom: 1px solid var(--y-cizgi-soft);
-    vertical-align: middle;
-}
-
-.invoice-table tr:last-child td {
-    border-bottom: none;
-}
-
-.invoice-table tr:hover {
-    background: var(--y-yuzey-2);
-}
-
-/* Invoice Number */
-.invoice-number {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.invoice-icon {
-    width: 42px;
-    height: 42px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 18px;
-}
-
-.invoice-number-text {
-    font-weight: 600;
-    color: var(--dark);
-    font-size: 14px;
-}
-
-.invoice-date {
-    font-size: 12px;
-    color: var(--gray);
-    margin-top: 2px;
-}
-
-/* Client Info */
-.client-info {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.client-avatar {
-    width: 38px;
-    height: 38px;
-    background: linear-gradient(135deg, var(--y-cizgi), #cbd5e1);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    color: var(--y-metin-3);
-    font-size: 14px;
-}
-
-.client-name {
-    font-weight: 500;
-    color: var(--dark);
-    font-size: 14px;
-}
-
-.client-email {
-    font-size: 12px;
-    color: var(--gray);
-}
-
-/* Amount */
-.amount-cell {
-    text-align: right;
-}
-
-.amount-total {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--dark);
-}
-
-.amount-paid {
-    font-size: 12px;
-    color: var(--gray);
-}
-
-.amount-paid.full {
-    color: #22c55e;
-}
-
-/* Due Date */
-.due-date {
-    font-size: 14px;
-    color: var(--dark);
-}
-
-.due-date.overdue {
-    color: #ef4444;
-    font-weight: 600;
-}
-
-.overdue-badge {
-    display: inline-block;
-    padding: 4px 10px;
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    margin-top: 4px;
-}
-
-/* Status Badge */
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.status-badge.paid {
-    background: rgba(34, 197, 94, 0.1);
-    color: #22c55e;
-}
-
-.status-badge.unpaid {
-    background: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
-}
-
-.status-badge.cancelled {
-    background: rgba(100, 116, 139, 0.1);
-    color: var(--y-metin-3);
-}
-
-.status-badge.refunded {
-    background: rgba(139, 92, 246, 0.1);
-    color: #8b5cf6;
-}
-
-.status-badge.draft {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
-}
-
-/* Action Buttons */
-.action-buttons {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-}
-
-.action-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--y-yuzey);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.3s;
-    color: var(--gray);
-    text-decoration: none;
-}
-
-.action-btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-    background: rgba(99, 102, 241, 0.05);
-}
-
-.action-btn.view:hover { border-color: #3b82f6; color: #3b82f6; background: rgba(59, 130, 246, 0.05); }
-.action-btn.paid:hover { border-color: #22c55e; color: #22c55e; background: rgba(34, 197, 94, 0.05); }
-.action-btn.cancel:hover { border-color: #f59e0b; color: #f59e0b; background: rgba(245, 158, 11, 0.05); }
-.action-btn.delete:hover { border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.05); }
-
-/* Dropdown Menu */
-.dropdown {
-    position: relative;
-}
-
-.dropdown-toggle {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--y-yuzey);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    color: var(--gray);
-}
-
-.dropdown-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    background: var(--y-yuzey);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-    min-width: 180px;
-    z-index: 100;
-    display: none;
-    overflow: hidden;
-}
-
-.dropdown-menu.show {
-    display: block;
-}
-
-.dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 16px;
-    font-size: 14px;
-    color: var(--dark);
-    text-decoration: none;
-    border: none;
-    background: none;
-    width: 100%;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.dropdown-item:hover {
-    background: var(--light);
-}
-
-.dropdown-item.danger {
-    color: #ef4444;
-}
-
-.dropdown-item.danger:hover {
-    background: rgba(239, 68, 68, 0.05);
-}
-
-.dropdown-item.warning {
-    color: #f59e0b;
-}
-
-.dropdown-item.success {
-    color: #22c55e;
-}
-
-.dropdown-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 4px 0;
-}
-
-/* Empty State */
-.empty-state {
-    padding: 80px 40px;
-    text-align: center;
-}
-
-.empty-state .icon {
-    font-size: 64px;
-    margin-bottom: 20px;
-    opacity: 0.3;
-}
-
-.empty-state h3 {
-    font-size: 20px;
-    color: var(--dark);
-    margin-bottom: 8px;
-}
-
-.empty-state p {
-    color: var(--gray);
-    font-size: 14px;
-}
-
-/* Pagination */
-.pagination-wrapper {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px;
-    border-top: 1px solid var(--border);
-}
-
-.pagination-info {
-    font-size: 14px;
-    color: var(--gray);
-}
-
-.pagination {
-    display: flex;
-    gap: 6px;
-}
-
-.pagination a {
-    width: 38px;
-    height: 38px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 10px;
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--dark);
-    background: var(--light);
-    transition: all 0.3s;
-}
-
-.pagination a:hover {
-    background: var(--primary);
-    color: white;
-}
-
-.pagination a.active {
-    background: var(--primary);
-    color: white;
-}
-
-/* Alert */
-.alert {
-    padding: 16px 20px;
-    border-radius: 12px;
-    margin-bottom: 24px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 14px;
-}
-
-.alert-success {
-    background: rgba(34, 197, 94, 0.1);
-    border: 1px solid rgba(34, 197, 94, 0.3);
-    color: #16a34a;
-}
-
-.alert-warning {
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-    color: #d97706;
-}
-
-.alert-danger {
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: #dc2626;
-}
-
-/* Confirm Modal */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-
-.modal-overlay.show {
-    display: flex;
-}
-
-.modal-box {
-    background: var(--y-yuzey);
-    border-radius: 20px;
-    padding: 30px;
-    max-width: 420px;
-    width: 90%;
-    text-align: center;
-    animation: modalSlide 0.3s ease;
-}
-
-@keyframes modalSlide {
-    from { opacity: 0; transform: scale(0.9) translateY(-20px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-.modal-icon {
-    width: 70px;
-    height: 70px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 32px;
-    margin: 0 auto 20px;
-}
-
-.modal-icon.warning {
-    background: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
-}
-
-.modal-icon.danger {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-}
-
-.modal-box h3 {
-    font-size: 20px;
-    color: var(--dark);
-    margin-bottom: 10px;
-}
-
-.modal-box p {
-    color: var(--gray);
-    font-size: 14px;
-    line-height: 1.6;
-    margin-bottom: 24px;
-}
-
-.modal-actions {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-}
-
-.modal-btn {
-    padding: 12px 28px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-    transition: all 0.3s;
-}
-
-.modal-btn.cancel {
-    background: var(--light);
-    color: var(--dark);
-}
-
-.modal-btn.cancel:hover {
-    background: var(--border);
-}
-
-.modal-btn.confirm-warning {
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    color: white;
-}
-
-.modal-btn.confirm-danger {
-    background: linear-gradient(135deg, #ef4444, #dc2626);
-    color: white;
-}
-
-.modal-btn.confirm-warning:hover,
-.modal-btn.confirm-danger:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-}
-
-/* Responsive */
-@media (max-width: 1200px) {
-    .stats-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-@media (max-width: 768px) {
-    .stats-grid { grid-template-columns: 1fr; }
-    .filter-bar { flex-direction: column; align-items: stretch; }
-    .filter-tabs { justify-content: center; }
-    .invoice-table { display: block; overflow-x: auto; }
-    .page-header { flex-direction: column; align-items: flex-start; }
-}
+    /* ==========================================
+       Faturalar - fa
+       ========================================== */
+    .fa-ozet {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 14px;
+        margin-bottom: 20px;
+    }
+
+    .fa-ozet-kart {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 17px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        color: var(--y-metin-2);
+        transition: border-color .15s;
+    }
+
+    .fa-ozet-kart:hover {
+        border-color: var(--y-primary);
+        text-decoration: none;
+    }
+
+    .fa-ozet-kart.secili {
+        border-color: var(--y-primary);
+        background: var(--y-primary-soft);
+    }
+
+    .fa-ozet-ikon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 15px;
+    }
+
+    .fa-ozet-kart b {
+        display: block;
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--y-metin);
+        line-height: 1.2;
+    }
+
+    .fa-ozet-kart span {
+        font-size: 12.5px;
+        color: var(--y-metin-3);
+    }
+
+    .fa-arac {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .fa-ara {
+        position: relative;
+        flex: 1;
+        min-width: 220px;
+        max-width: 420px;
+    }
+
+    .fa-ara i {
+        position: absolute;
+        left: 13px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 13px;
+        color: var(--y-metin-3);
+        pointer-events: none;
+    }
+
+    .fa-ara input {
+        width: 100%;
+        padding-left: 36px;
+    }
+
+    .fa-sarmal {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow-x: auto;
+    }
+
+    .fa-tablo {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+        min-width: 900px;
+    }
+
+    .fa-tablo th {
+        padding: 11px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: var(--y-metin-3);
+        white-space: nowrap;
+    }
+
+    .fa-tablo td {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+        vertical-align: middle;
+    }
+
+    .fa-tablo tr:last-child td {
+        border-bottom: none;
+    }
+
+    .fa-tablo tbody tr:hover td {
+        background: var(--y-yuzey-2);
+    }
+
+    .fa-no b {
+        font-weight: 700;
+        color: var(--y-metin);
+    }
+
+    .fa-no span {
+        display: block;
+        margin-top: 2px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .fa-musteri b {
+        display: block;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .fa-musteri a {
+        font-size: 12px;
+        color: var(--y-metin-3);
+    }
+
+    .fa-musteri a:hover {
+        color: var(--y-primary);
+    }
+
+    .fa-sag {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .fa-tutar {
+        font-weight: 700;
+        color: var(--y-metin);
+    }
+
+    .fa-kalan {
+        display: block;
+        margin-top: 2px;
+        font-size: 11.5px;
+        color: var(--y-danger);
+    }
+
+    .fa-gecikmis {
+        display: inline-block;
+        margin-left: 5px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--y-danger) 13%, transparent);
+        color: var(--y-danger);
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .fa-eylem {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+    }
+
+    .fa-eylem form {
+        display: inline;
+    }
+
+    .alert-uyari {
+        border-left-color: var(--y-warning);
+        background: color-mix(in srgb, var(--y-warning) 8%, var(--y-yuzey));
+    }
 </style>
 
-<?php if ($message): ?>
-    <div class="alert alert-<?= $messageType ?>">
-        <i class="fas fa-<?= $messageType === 'success' ? 'check-circle' : ($messageType === 'warning' ? 'exclamation-triangle' : 'times-circle') ?>"></i>
-        <?= htmlspecialchars($message) ?>
+<div class="page-header">
+    <div>
+        <h1>Faturalar</h1>
+        <p><?= number_format($toplam, 0, ',', '.') ?> kayıt<?= $arama !== '' || $suzgec !== '' ? ' (süzülmüş)' : '' ?></p>
+    </div>
+    <?php if (is_file(__DIR__ . '/invoice-create.php')): ?>
+        <a href="invoice-create.php" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Yeni fatura
+        </a>
+    <?php endif; ?>
+</div>
+
+<?php if ($mesaj): ?>
+    <?php
+    $sinif = match ($mesaj['tip']) {
+        'success' => 'alert-success',
+        'uyari' => 'alert-uyari',
+        default => 'alert-error',
+    };
+    $ikon = match ($mesaj['tip']) {
+        'success' => 'fa-circle-check',
+        'uyari' => 'fa-triangle-exclamation',
+        default => 'fa-circle-exclamation',
+    };
+    ?>
+    <div class="alert <?= $sinif ?>">
+        <i class="fas <?= $ikon ?> alert-icon"></i>
+        <span><?= htmlspecialchars((string) $mesaj['metin']) ?></span>
     </div>
 <?php endif; ?>
 
-<!-- Page Header -->
-<div class="page-header">
-    <h1><i class="fas fa-file-invoice-dollar"></i> Fatura Yönetimi</h1>
-    <div class="header-actions">
-        <a href="invoice-create.php" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Yeni Fatura
+<div class="fa-ozet">
+    <?php foreach ($ozet as [$ad, $deger, $ikon, $filtre, $paraMi]): ?>
+        <a class="fa-ozet-kart <?= $filtre !== '' && $suzgec === $filtre ? 'secili' : '' ?>"
+            href="invoices.php<?= $filtre !== '' ? '?status=' . $filtre : '' ?>">
+            <span class="fa-ozet-ikon"><i class="fas <?= $ikon ?>"></i></span>
+            <span>
+                <b><?= $paraMi
+                    ? number_format($deger, 2, ',', '.') . ' ₺'
+                    : number_format($deger, 0, ',', '.') ?></b>
+                <span><?= $ad ?></span>
+            </span>
         </a>
-    </div>
+    <?php endforeach; ?>
 </div>
 
-<!-- Stats Grid -->
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-icon blue">
-            <i class="fas fa-file-invoice"></i>
-        </div>
-        <div class="stat-info">
-            <h3><?= $stats['total'] ?></h3>
-            <span>Toplam Fatura</span>
-        </div>
+<form class="fa-arac" method="get">
+    <?php if ($suzgec !== ''): ?>
+        <input type="hidden" name="status" value="<?= htmlspecialchars($suzgec) ?>">
+    <?php endif; ?>
+    <div class="fa-ara">
+        <i class="fas fa-magnifying-glass"></i>
+        <input type="search" name="q" value="<?= htmlspecialchars($arama) ?>"
+            placeholder="Fatura numarası, müşteri adı veya e-posta…">
     </div>
-    <div class="stat-card">
-        <div class="stat-icon orange">
-            <i class="fas fa-clock"></i>
-        </div>
-        <div class="stat-info">
-            <h3><?= $stats['unpaid'] ?></h3>
-            <span>Ödenmemiş</span>
-            <div class="money">₺<?= number_format($stats['totalUnpaid'], 2) ?></div>
-        </div>
+    <div style="display:flex; gap:8px;">
+        <button type="submit" class="btn btn-outline"><i class="fas fa-filter"></i> Ara</button>
+        <?php if ($arama !== '' || $suzgec !== ''): ?>
+            <a href="invoices.php" class="btn btn-outline"><i class="fas fa-xmark"></i> Sıfırla</a>
+        <?php endif; ?>
     </div>
-    <div class="stat-card">
-        <div class="stat-icon green">
-            <i class="fas fa-check-circle"></i>
-        </div>
-        <div class="stat-info">
-            <h3><?= $stats['paid'] ?></h3>
-            <span>Ödenmiş</span>
-            <div class="money">₺<?= number_format($stats['totalPaid'], 2) ?></div>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon red">
-            <i class="fas fa-exclamation-triangle"></i>
-        </div>
-        <div class="stat-info">
-            <h3><?= $stats['overdue'] ?></h3>
-            <span>Gecikmiş Fatura</span>
-        </div>
-    </div>
-</div>
+</form>
 
-<!-- Filter Bar -->
-<div class="filter-bar">
-    <div class="filter-tabs">
-        <a href="?status=" class="filter-tab <?= !$statusFilter ? 'active' : '' ?>">
-            Tümü <span class="count"><?= $stats['total'] ?></span>
-        </a>
-        <a href="?status=unpaid" class="filter-tab <?= $statusFilter === 'unpaid' ? 'active' : '' ?>">
-            Ödenmemiş <span class="count"><?= $stats['unpaid'] ?></span>
-        </a>
-        <a href="?status=paid" class="filter-tab <?= $statusFilter === 'paid' ? 'active' : '' ?>">
-            Ödenmiş <span class="count"><?= $stats['paid'] ?></span>
-        </a>
-        <a href="?status=cancelled" class="filter-tab <?= $statusFilter === 'cancelled' ? 'active' : '' ?>">
-            İptal <span class="count"><?= $stats['cancelled'] ?></span>
-        </a>
-    </div>
-    <div class="search-box">
-        <i class="fas fa-search"></i>
-        <input type="text" placeholder="Fatura no, müşteri ara..." value="<?= htmlspecialchars($searchQuery) ?>" 
-               onkeypress="if(event.key==='Enter') window.location='?search='+this.value+'&status=<?= $statusFilter ?>'">
-    </div>
-</div>
-
-<!-- Invoice Table -->
-<div class="invoice-card">
-    <?php if (empty($invoices)): ?>
+<div class="fa-sarmal">
+    <?php if (!$faturalar): ?>
         <div class="empty-state">
-            <div class="icon">📄</div>
-            <h3>Fatura bulunamadı</h3>
-            <p>Henüz fatura oluşturulmamış veya filtreye uygun fatura yok.</p>
+            <i class="fas fa-file-invoice"></i>
+            <h3><?= $arama !== '' || $suzgec !== '' ? 'Eşleşen fatura yok' : 'Henüz fatura yok' ?></h3>
+            <p><?= $arama !== '' || $suzgec !== ''
+                ? 'Aramayı değiştirin ya da süzgeci sıfırlayın.'
+                : 'Sipariş verildiğinde ya da elle oluşturduğunuzda burada listelenir.' ?></p>
         </div>
     <?php else: ?>
-        <table class="invoice-table">
+        <table class="fa-tablo">
             <thead>
                 <tr>
                     <th>Fatura</th>
                     <th>Müşteri</th>
-                    <th style="text-align: right;">Tutar</th>
-                    <th>Vade Tarihi</th>
+                    <th class="fa-sag">Tutar</th>
+                    <th>Vade</th>
                     <th>Durum</th>
-                    <th style="text-align: right;">İşlemler</th>
+                    <th class="fa-sag">İşlem</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($invoices as $invoice): 
-                    $isOverdue = $invoice['status'] === 'unpaid' && strtotime($invoice['due_date']) < time();
-                    $statusClass = match($invoice['status']) {
-                        'paid' => 'paid',
-                        'unpaid' => 'unpaid',
-                        'cancelled' => 'cancelled',
-                        'refunded' => 'refunded',
-                        default => 'draft'
-                    };
-                    $statusText = match($invoice['status']) {
-                        'paid' => 'Ödendi',
-                        'unpaid' => 'Ödenmedi',
-                        'cancelled' => 'İptal',
-                        'refunded' => 'İade',
-                        'draft' => 'Taslak',
-                        default => $invoice['status']
-                    };
-                    $statusIcon = match($invoice['status']) {
-                        'paid' => 'fa-check-circle',
-                        'unpaid' => 'fa-clock',
-                        'cancelled' => 'fa-times-circle',
-                        'refunded' => 'fa-undo',
-                        default => 'fa-file'
-                    };
-                    $initials = strtoupper(substr($invoice['first_name'] ?? 'X', 0, 1) . substr($invoice['last_name'] ?? 'X', 0, 1));
-                ?>
-                <tr>
-                    <td>
-                        <div class="invoice-number">
-                            <div class="invoice-icon">
-                                <i class="fas fa-file-invoice"></i>
-                            </div>
-                            <div>
-                                <div class="invoice-number-text"><?= htmlspecialchars($invoice['invoice_number']) ?></div>
-                                <div class="invoice-date"><?= date('d.m.Y H:i', strtotime($invoice['created_at'])) ?></div>
-                            </div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="client-info">
-                            <div class="client-avatar"><?= $initials ?></div>
-                            <div>
-                                <div class="client-name"><?= htmlspecialchars(($invoice['first_name'] ?? '') . ' ' . ($invoice['last_name'] ?? '')) ?></div>
-                                <div class="client-email"><?= htmlspecialchars($invoice['email'] ?? '') ?></div>
-                            </div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="amount-cell">
-                            <div class="amount-total"><?= number_format((float)$invoice['total'], 2) ?> <?= $invoice['currency'] ?></div>
-                            <div class="amount-paid <?= (float)$invoice['amount_paid'] >= (float)$invoice['total'] ? 'full' : '' ?>">
-                                Ödenen: <?= number_format((float)$invoice['amount_paid'], 2) ?> <?= $invoice['currency'] ?>
-                            </div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="due-date <?= $isOverdue ? 'overdue' : '' ?>">
-                            <?= date('d.m.Y', strtotime($invoice['due_date'])) ?>
-                        </div>
-                        <?php if ($isOverdue): ?>
-                            <div class="overdue-badge">
-                                <i class="fas fa-exclamation-triangle"></i> Gecikmiş
-                            </div>
-                        <?php endif; ?>
-                    </td>
-                    <td>
-                        <span class="status-badge <?= $statusClass ?>">
-                            <i class="fas <?= $statusIcon ?>"></i>
-                            <?= $statusText ?>
-                        </span>
-                    </td>
-                    <td>
-                        <div class="action-buttons">
-                            <a href="invoice-view.php?id=<?= $invoice['id'] ?>" class="action-btn view" title="Görüntüle">
-                                <i class="fas fa-eye"></i>
-                            </a>
-                            <?php if ($invoice['status'] === 'unpaid'): ?>
-                                <button type="button" class="action-btn paid" title="Ödendi İşaretle" 
-                                        onclick="confirmAction('paid', <?= $invoice['id'] ?>, '<?= htmlspecialchars($invoice['invoice_number']) ?>')">
-                                    <i class="fas fa-check"></i>
-                                </button>
-                                <button type="button" class="action-btn cancel" title="İptal Et" 
-                                        onclick="confirmAction('cancel', <?= $invoice['id'] ?>, '<?= htmlspecialchars($invoice['invoice_number']) ?>')">
-                                    <i class="fas fa-ban"></i>
-                                </button>
+                <?php foreach ($faturalar as $f):
+                    $id = (int) $f['id'];
+                    $no = (string) ($f['invoice_number'] ?: $id);
+                    $ad = trim((string) ($f['first_name'] ?? '') . ' ' . (string) ($f['last_name'] ?? ''));
+                    [$durumAd, $durumSinif] = $durumlar[$f['status']] ?? [(string) $f['status'], 'badge'];
+                    $kalan = (float) $f['total'] - (float) $f['amount_paid'];
+                    $gecikmis = $f['status'] === 'unpaid' && !empty($f['due_date'])
+                        && strtotime((string) $f['due_date']) < strtotime(date('Y-m-d'));
+                    $gun = $gecikmis
+                        ? (int) floor((strtotime(date('Y-m-d')) - strtotime((string) $f['due_date'])) / 86400)
+                        : 0;
+                    ?>
+                    <tr>
+                        <td class="fa-no">
+                            <b><?= htmlspecialchars($no) ?></b>
+                            <span><?= date('d.m.Y', strtotime((string) $f['created_at'])) ?>
+                                <?php if (!empty($f['payment_method'])): ?>
+                                    &middot; <?= htmlspecialchars($odemeYontemi[$f['payment_method']] ?? (string) $f['payment_method']) ?>
+                                <?php endif; ?>
+                            </span>
+                        </td>
+                        <td class="fa-musteri">
+                            <?php if ($ad !== ''): ?>
+                                <b><?= htmlspecialchars($ad) ?></b>
+                                <a href="client-view.php?id=<?= (int) $f['client_id'] ?>" dir="ltr">
+                                    <?= htmlspecialchars((string) ($f['email'] ?? '')) ?>
+                                </a>
+                            <?php else: ?>
+                                <b style="color:var(--y-metin-3)">Müşteri silinmiş</b>
                             <?php endif; ?>
-                            <button type="button" class="action-btn delete" title="Sil" 
-                                    onclick="confirmAction('delete', <?= $invoice['id'] ?>, '<?= htmlspecialchars($invoice['invoice_number']) ?>')">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
+                        </td>
+                        <td class="fa-sag">
+                            <span class="fa-tutar"><?= number_format((float) $f['total'], 2, ',', '.') ?> ₺</span>
+                            <?php if ($kalan > 0 && $f['status'] !== 'cancelled'): ?>
+                                <span class="fa-kalan"><?= number_format($kalan, 2, ',', '.') ?> ₺ kalan</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="font-size:12.5px; color:var(--y-metin-3);">
+                            <?= !empty($f['due_date']) ? date('d.m.Y', strtotime((string) $f['due_date'])) : '—' ?>
+                            <?php if ($gecikmis): ?>
+                                <span class="fa-gecikmis"><?= $gun ?> gün</span>
+                            <?php endif; ?>
+                        </td>
+                        <td><span class="badge <?= $durumSinif ?>"><?= $durumAd ?></span></td>
+                        <td class="fa-sag">
+                            <div class="fa-eylem">
+                                <a class="action-btn" href="invoice-view.php?id=<?= $id ?>" title="Görüntüle">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+
+                                <?php if ($f['status'] === 'unpaid' || $f['status'] === 'draft'): ?>
+                                    <form method="post"
+                                        onsubmit="return confirm(<?= htmlspecialchars(json_encode(
+                                            $no . ' ödendi olarak işaretlenecek ve '
+                                            . number_format((float) $f['total'], 2, ',', '.')
+                                            . ' ₺ tutarında ödeme kaydı oluşturulacak. Onaylıyor musunuz?',
+                                            JSON_UNESCAPED_UNICODE
+                                        ), ENT_QUOTES) ?>);">
+                                        <?= Guvenlik::alan() ?>
+                                        <input type="hidden" name="odendi" value="1">
+                                        <input type="hidden" name="invoice_id" value="<?= $id ?>">
+                                        <button type="submit" class="action-btn" title="Ödendi işaretle">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                    </form>
+
+                                    <form method="post"
+                                        onsubmit="return confirm('<?= htmlspecialchars($no) ?> iptal edilecek. Devam edilsin mi?');">
+                                        <?= Guvenlik::alan() ?>
+                                        <input type="hidden" name="iptal" value="1">
+                                        <input type="hidden" name="invoice_id" value="<?= $id ?>">
+                                        <button type="submit" class="action-btn" title="İptal et">
+                                            <i class="fas fa-ban"></i>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+
+                                <form method="post"
+                                    onsubmit="return confirm(<?= htmlspecialchars(json_encode(
+                                        $no . ' ve kalemleri kalıcı olarak silinecek. Bu faturaya bağlı ödeme '
+                                        . 'kayıtları silinmez ama fatura bağı kopar. Devam edilsin mi?',
+                                        JSON_UNESCAPED_UNICODE
+                                    ), ENT_QUOTES) ?>);">
+                                    <?= Guvenlik::alan() ?>
+                                    <input type="hidden" name="fatura_sil" value="1">
+                                    <input type="hidden" name="invoice_id" value="<?= $id ?>">
+                                    <button type="submit" class="action-btn" title="Sil">
+                                        <i class="fas fa-trash-can"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
-        
-        <?php if ($totalPages > 1): ?>
-        <div class="pagination-wrapper">
-            <div class="pagination-info">
-                Toplam <?= $total ?> faturadan <?= $offset + 1 ?>-<?= min($offset + $perPage, $total) ?> arası gösteriliyor
-            </div>
-            <div class="pagination">
-                <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page - 1 ?>&status=<?= $statusFilter ?>&search=<?= urlencode($searchQuery) ?>">
-                        <i class="fas fa-chevron-left"></i>
-                    </a>
-                <?php endif; ?>
-                
-                <?php for ($i = max(1, $page - 2); $i <= min($totalPages, $page + 2); $i++): ?>
-                    <a href="?page=<?= $i ?>&status=<?= $statusFilter ?>&search=<?= urlencode($searchQuery) ?>" 
-                       class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
-                <?php endfor; ?>
-                
-                <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page + 1 ?>&status=<?= $statusFilter ?>&search=<?= urlencode($searchQuery) ?>">
-                        <i class="fas fa-chevron-right"></i>
-                    </a>
-                <?php endif; ?>
-            </div>
-        </div>
-        <?php endif; ?>
     <?php endif; ?>
 </div>
 
-<!-- Confirm Modal -->
-<div class="modal-overlay" id="confirmModal">
-    <div class="modal-box">
-        <div class="modal-icon" id="modalIcon">
-            <i class="fas fa-exclamation-triangle"></i>
-        </div>
-        <h3 id="modalTitle">Emin misiniz?</h3>
-        <p id="modalMessage">Bu işlemi gerçekleştirmek istediğinizden emin misiniz?</p>
-        <div class="modal-actions">
-            <button type="button" class="modal-btn cancel" onclick="closeModal()">İptal</button>
-            <form method="POST" id="actionForm" style="display: inline;">
-                <input type="hidden" name="invoice_id" id="actionInvoiceId">
-                <button type="submit" class="modal-btn" id="confirmBtn" name="">Onayla</button>
-            </form>
-        </div>
+<?php if ($sayfaSayisi > 1): ?>
+    <?php
+    $bag = static function (int $s) use ($arama, $suzgec): string {
+        $p = ['page' => $s];
+        if ($arama !== '') {
+            $p['q'] = $arama;
+        }
+        if ($suzgec !== '') {
+            $p['status'] = $suzgec;
+        }
+        return 'invoices.php?' . http_build_query($p);
+    };
+    ?>
+    <div class="pagination">
+        <?php if ($sayfa > 1): ?>
+            <a href="<?= htmlspecialchars($bag($sayfa - 1)) ?>"><i class="fas fa-chevron-left"></i></a>
+        <?php endif; ?>
+        <?php for ($i = max(1, $sayfa - 2); $i <= min($sayfaSayisi, $sayfa + 2); $i++): ?>
+            <?php if ($i === $sayfa): ?>
+                <span class="active"><?= $i ?></span>
+            <?php else: ?>
+                <a href="<?= htmlspecialchars($bag($i)) ?>"><?= $i ?></a>
+            <?php endif; ?>
+        <?php endfor; ?>
+        <?php if ($sayfa < $sayfaSayisi): ?>
+            <a href="<?= htmlspecialchars($bag($sayfa + 1)) ?>"><i class="fas fa-chevron-right"></i></a>
+        <?php endif; ?>
     </div>
-</div>
+<?php endif; ?>
 
-<script>
-function confirmAction(action, invoiceId, invoiceNumber) {
-    const modal = document.getElementById('confirmModal');
-    const modalIcon = document.getElementById('modalIcon');
-    const modalTitle = document.getElementById('modalTitle');
-    const modalMessage = document.getElementById('modalMessage');
-    const confirmBtn = document.getElementById('confirmBtn');
-    const actionInvoiceId = document.getElementById('actionInvoiceId');
-    
-    actionInvoiceId.value = invoiceId;
-    
-    if (action === 'cancel') {
-        modalIcon.className = 'modal-icon warning';
-        modalIcon.innerHTML = '<i class="fas fa-ban"></i>';
-        modalTitle.textContent = 'Faturayı İptal Et';
-        modalMessage.innerHTML = '<strong>' + invoiceNumber + '</strong> numaralı faturayı iptal etmek istediğinizden emin misiniz?<br><br>Bu işlem geri alınabilir.';
-        confirmBtn.className = 'modal-btn confirm-warning';
-        confirmBtn.textContent = 'Evet, İptal Et';
-        confirmBtn.name = 'cancel_invoice';
-    } else if (action === 'delete') {
-        modalIcon.className = 'modal-icon danger';
-        modalIcon.innerHTML = '<i class="fas fa-trash"></i>';
-        modalTitle.textContent = 'Faturayı Kalıcı Olarak Sil';
-        modalMessage.innerHTML = '<strong>' + invoiceNumber + '</strong> numaralı faturayı kalıcı olarak silmek istediğinizden emin misiniz?<br><br><strong style="color:#ef4444;">⚠️ Bu işlem geri alınamaz!</strong>';
-        confirmBtn.className = 'modal-btn confirm-danger';
-        confirmBtn.textContent = 'Evet, Kalıcı Olarak Sil';
-        confirmBtn.name = 'delete_invoice';
-    } else if (action === 'paid') {
-        modalIcon.className = 'modal-icon warning';
-        modalIcon.innerHTML = '<i class="fas fa-check-circle" style="color:#22c55e;"></i>';
-        modalTitle.textContent = 'Ödendi Olarak İşaretle';
-        modalMessage.innerHTML = '<strong>' + invoiceNumber + '</strong> numaralı faturayı ödendi olarak işaretlemek istediğinizden emin misiniz?';
-        confirmBtn.className = 'modal-btn confirm-warning';
-        confirmBtn.style.background = 'linear-gradient(135deg, #22c55e, #16a34a)';
-        confirmBtn.textContent = 'Evet, Ödendi İşaretle';
-        confirmBtn.name = 'mark_paid';
-    }
-    
-    modal.classList.add('show');
-}
-
-function closeModal() {
-    document.getElementById('confirmModal').classList.remove('show');
-}
-
-// Close modal on outside click
-document.getElementById('confirmModal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        closeModal();
-    }
-});
-
-// Close modal on ESC key
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        closeModal();
-    }
-});
-</script>
-
-<?php include 'includes/footer.php'; ?>
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

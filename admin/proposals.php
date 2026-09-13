@@ -1,244 +1,590 @@
 <?php
+/**
+ * VHM - Teklifler
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - Oturum yoksa login.php'ye yönlendiriyordu; o dosya yok, giriş
+ *     sayfası index.php. Yani oturumsuz erişimde 404 alınıyordu.
+ *   - proposals tablosu yoksa setup-proposals.php'ye yönlendiriyordu;
+ *     o dosya güvenlik açığı olduğu için kaldırılmıştı.
+ *   - Silmede önce proposals, sonra proposal_items siliniyordu ve
+ *     proposal_items'ta yabancı anahtar yok; sıra ters olduğu için
+ *     kalemler yetim kalabiliyordu.
+ *   - Silme sonrası mesaj ?msg=deleted ile adres çubuğunda kalıyordu.
+ */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
-    header('Location: login.php');
+    /* Giriş sayfası index.php; login.php diye bir dosya yok */
+    header('Location: index.php');
     exit;
 }
 
-$pageTitle = 'Teklif Yönetimi';
+$pageTitle = 'Teklifler';
 $currentPage = 'proposals';
 
-// Auto-Setup Check
-try {
-    $tableExists = Database::fetchColumn("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'proposals'");
-    if (!$tableExists) { header('Location: setup-proposals.php'); exit; }
-} catch (Exception $e) {}
+/* proposals.status enum'u ile birebir aynı */
+$durumlar = [
+    'Draft' => ['Taslak', 'badge', 'fa-pen-ruler'],
+    'Sent' => ['Gönderildi', 'badge-info', 'fa-paper-plane'],
+    'Accepted' => ['Kabul edildi', 'badge-success', 'fa-circle-check'],
+    'Rejected' => ['Reddedildi', 'badge-danger', 'fa-circle-xmark'],
+    'Expired' => ['Süresi doldu', 'badge-warning', 'fa-hourglass-end'],
+];
 
-// Silme
-/* Durum degistiren islem POST ile gelir; belirtec dogrulanir. */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
-    Guvenlik::zorunlu();
-    $id = (int)$_POST['delete'];
-    Database::query("DELETE FROM proposals WHERE id = ?", [$id]);
-    Database::query("DELETE FROM proposal_items WHERE proposal_id = ?", [$id]);
-    header('Location: proposals.php?msg=deleted');
+/* Tablo yoksa sayfa çökmesin; kurulum betiğine yönlendirmek yerine
+   durumu açıkça söyle. */
+$tabloVar = true;
+try {
+    Database::fetchColumn("SELECT 1 FROM proposals LIMIT 1");
+} catch (Throwable $e) {
+    $tabloVar = false;
+    error_log('Teklif tablosu okunamadı: ' . $e->getMessage());
+}
+
+function teklifMesaj(string $tip, string $metin): void
+{
+    $_SESSION['tkl_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: proposals.php');
     exit;
 }
 
-// İstatistikleri Çek
-$stats = Database::fetch("
-    SELECT 
-        COUNT(*) as total_count,
-        SUM(CASE WHEN status = 'Draft' THEN 1 ELSE 0 END) as draft_count,
-        SUM(CASE WHEN status = 'Sent' THEN 1 ELSE 0 END) as sent_count,
-        SUM(CASE WHEN status = 'Accepted' THEN 1 ELSE 0 END) as accepted_count,
-        SUM(CASE WHEN status = 'Accepted' THEN total_amount ELSE 0 END) as accepted_amount
-    FROM proposals
-");
+/* ---------- Silme ---------- */
+if ($tabloVar && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete']) && is_numeric($_POST['delete'])) {
+    Guvenlik::zorunlu();
+    $id = (int) $_POST['delete'];
+    $db = Database::getInstance();
 
-// Liste Filtreleme
-$statusFilter = $_GET['status'] ?? '';
-$sql = "SELECT p.*, c.first_name, c.last_name, c.company_name, c.email 
-        FROM proposals p 
-        LEFT JOIN clients c ON p.client_id = c.id";
-
-if ($statusFilter) {
-    if($statusFilter == 'Expired') $sql .= " WHERE p.valid_until < CURDATE() AND p.status != 'Accepted'";
-    else $sql .= " WHERE p.status = '$statusFilter'";
+    try {
+        $db->beginTransaction();
+        /* proposal_items'ta yabancı anahtar yok; önce kalemler silinmeli */
+        Database::query("DELETE FROM proposal_items WHERE proposal_id = ?", [$id]);
+        Database::query("DELETE FROM proposals WHERE id = ?", [$id]);
+        $db->commit();
+        teklifMesaj('success', 'Teklif ve kalemleri silindi.');
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('Teklif silinemedi: ' . $e->getMessage());
+        teklifMesaj('error', 'Teklif silinemedi.');
+    }
 }
-$sql .= " ORDER BY p.id DESC";
 
-$proposals = Database::fetchAll($sql);
+/* ---------- Durum değiştirme ---------- */
+if ($tabloVar && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['durum_id'])) {
+    Guvenlik::zorunlu();
+    $id = (int) $_POST['durum_id'];
+    $yeni = (string) ($_POST['durum'] ?? '');
 
-include 'includes/header.php';
+    if (!isset($durumlar[$yeni])) {
+        teklifMesaj('error', 'Geçersiz teklif durumu.');
+    }
+
+    try {
+        Database::update('proposals', ['status' => $yeni], 'id = ?', [$id]);
+        teklifMesaj('success', 'Teklif durumu "' . $durumlar[$yeni][0] . '" olarak güncellendi.');
+    } catch (Throwable $e) {
+        error_log('Teklif durumu güncellenemedi: ' . $e->getMessage());
+        teklifMesaj('error', 'Durum güncellenemedi.');
+    }
+}
+
+$mesaj = null;
+if (!empty($_SESSION['tkl_mesaj'])) {
+    $mesaj = $_SESSION['tkl_mesaj'];
+    unset($_SESSION['tkl_mesaj']);
+}
+
+/* ---------- Veriler ---------- */
+$suzgec = (string) ($_GET['durum'] ?? '');
+$arama = trim((string) ($_GET['q'] ?? ''));
+
+$teklifler = [];
+$toplam = 0;
+$sayfaSayisi = 1;
+$sayfa = max(1, (int) ($_GET['page'] ?? 1));
+$adet = 20;
+
+$ozet = [
+    ['Tüm teklifler', 0, 'fa-file-signature', ''],
+    ['Gönderildi', 0, 'fa-paper-plane', 'Sent'],
+    ['Kabul edildi', 0, 'fa-circle-check', 'Accepted'],
+    ['Bekleyen tutar', 0.0, 'fa-turkish-lira-sign', ''],
+];
+
+if ($tabloVar) {
+    $kosul = [];
+    $par = [];
+    if (isset($durumlar[$suzgec])) {
+        $kosul[] = "p.status = ?";
+        $par[] = $suzgec;
+    }
+    if ($arama !== '') {
+        $kosul[] = "(p.subject LIKE ? OR c.first_name LIKE ? OR c.last_name LIKE ? OR c.email LIKE ?)";
+        $desen = '%' . str_replace(['%', '_'], ['\%', '\_'], $arama) . '%';
+        $par = array_merge($par, array_fill(0, 4, $desen));
+    }
+    $nerede = $kosul ? ' WHERE ' . implode(' AND ', $kosul) : '';
+    $atla = ($sayfa - 1) * $adet;
+
+    $guvenli = static function (string $sql, array $p = []): float {
+        try {
+            return (float) Database::fetchColumn($sql, $p);
+        } catch (Throwable $e) {
+            error_log('Teklif sorgusu: ' . $e->getMessage());
+            return 0;
+        }
+    };
+
+    $toplam = (int) $guvenli(
+        "SELECT COUNT(*) FROM proposals p LEFT JOIN clients c ON c.id = p.client_id" . $nerede,
+        $par
+    );
+    $sayfaSayisi = max(1, (int) ceil($toplam / $adet));
+
+    try {
+        $teklifler = Database::fetchAll(
+            "SELECT p.*, c.first_name, c.last_name, c.email,
+                    (SELECT COUNT(*) FROM proposal_items i WHERE i.proposal_id = p.id) AS kalem
+               FROM proposals p
+               LEFT JOIN clients c ON c.id = p.client_id
+               {$nerede}
+              ORDER BY p.created_at DESC
+              LIMIT {$adet} OFFSET {$atla}",
+            $par
+        );
+    } catch (Throwable $e) {
+        error_log('Teklif listesi okunamadı: ' . $e->getMessage());
+        $teklifler = [];
+    }
+
+    $ozet = [
+        ['Tüm teklifler', $guvenli("SELECT COUNT(*) FROM proposals"), 'fa-file-signature', ''],
+        ['Gönderildi', $guvenli("SELECT COUNT(*) FROM proposals WHERE status = 'Sent'"), 'fa-paper-plane', 'Sent'],
+        ['Kabul edildi', $guvenli("SELECT COUNT(*) FROM proposals WHERE status = 'Accepted'"), 'fa-circle-check', 'Accepted'],
+        ['Bekleyen tutar', $guvenli("SELECT COALESCE(SUM(total_amount),0) FROM proposals WHERE status = 'Sent'"), 'fa-turkish-lira-sign', ''],
+    ];
+}
+
+require_once __DIR__ . '/includes/header.php';
 ?>
 
-<!-- FontAwesome Force Load -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
 <style>
-/* Dashboard Style Tweaks */
-.page-header-actions { display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; }
-.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
-.stat-card {
-    background: var(--y-yuzey); padding: 20px; border-radius: 12px;
-    border: 1px solid var(--y-cizgi);
-    display: flex; align-items: center; gap: 15px;
-    transition: transform 0.2s;
-}
-.stat-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-.stat-icon {
-    width: 48px; height: 48px; border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 20px; flex-shrink: 0;
-}
-.stat-info h3 { font-size: 24px; font-weight: 700; margin: 0; color: var(--y-metin); }
-.stat-info p { margin: 0; font-size: 13px; color: var(--y-metin-3); }
+    /* ==========================================
+       Teklifler - tk
+       ========================================== */
+    .tk-ozet {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 14px;
+        margin-bottom: 20px;
+    }
 
-/* Filters */
-.filter-tabs {
-    display: inline-flex; background: var(--y-yuzey); padding: 5px; border-radius: 10px;
-    border: 1px solid var(--y-cizgi); margin-bottom: 20px;
-}
-.filter-tab {
-    padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
-    text-decoration: none; color: var(--y-metin-3); transition: 0.2s;
-}
-.filter-tab:hover { background: var(--y-yuzey-2); color: var(--y-metin); }
-.filter-tab.active { background: #6366f1; color: white; box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3); }
+    .tk-ozet-kart {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 17px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        color: var(--y-metin-2);
+        transition: border-color .15s;
+    }
 
-/* Proposal Table */
-.proposal-row td { vertical-align: middle; padding: 16px 20px; }
-.client-info { display: flex; align-items: center; gap: 10px; }
-.client-avatar {
-    width: 36px; height: 36px; background: #e0e7ff; border-radius: 50%;
-    color: #6366f1; display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 13px;
-}
-.action-btn {
-    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--y-cizgi);
-    display: inline-flex; align-items: center; justify-content: center;
-    color: var(--y-metin-3); transition: 0.2s; background: var(--y-yuzey);
-    text-decoration: none;
-}
-.action-btn i { font-size: 14px; color: var(--y-metin-3); } /* Force Icon Color */
-.action-btn:hover { background: var(--y-yuzey-2); border-color: #6366f1; }
-.action-btn:hover i { color: #6366f1; }
+    .tk-ozet-kart:hover {
+        border-color: var(--y-primary);
+        text-decoration: none;
+    }
 
-.action-btn.delete:hover { border-color: #ef4444; background: #fef2f2; }
-.action-btn.delete:hover i { color: #ef4444; }
+    .tk-ozet-kart.secili {
+        border-color: var(--y-primary);
+        background: var(--y-primary-soft);
+    }
 
-@media (max-width: 1200px) { .stats-grid { grid-template-columns: 1fr 1fr; } }
+    .tk-ozet-ikon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 15px;
+    }
+
+    .tk-ozet-kart b {
+        display: block;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--y-metin);
+        line-height: 1.2;
+    }
+
+    .tk-ozet-kart span {
+        font-size: 12.5px;
+        color: var(--y-metin-3);
+    }
+
+    .tk-arac {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .tk-ara {
+        position: relative;
+        flex: 1;
+        min-width: 220px;
+        max-width: 420px;
+    }
+
+    .tk-ara i {
+        position: absolute;
+        left: 13px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 13px;
+        color: var(--y-metin-3);
+        pointer-events: none;
+    }
+
+    .tk-ara input {
+        width: 100%;
+        padding-left: 36px;
+    }
+
+    .tk-sarmal {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow-x: auto;
+    }
+
+    .tk-tablo {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+        min-width: 860px;
+    }
+
+    .tk-tablo th {
+        padding: 11px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: var(--y-metin-3);
+        white-space: nowrap;
+    }
+
+    .tk-tablo td {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+        vertical-align: middle;
+    }
+
+    .tk-tablo tr:last-child td {
+        border-bottom: none;
+    }
+
+    .tk-tablo tbody tr:hover td {
+        background: var(--y-yuzey-2);
+    }
+
+    .tk-konu b {
+        display: block;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .tk-konu span {
+        display: block;
+        margin-top: 2px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .tk-musteri b {
+        display: block;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .tk-musteri a {
+        font-size: 12px;
+        color: var(--y-metin-3);
+    }
+
+    .tk-musteri a:hover {
+        color: var(--y-primary);
+    }
+
+    .tk-sag {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .tk-tutar {
+        font-weight: 700;
+        color: var(--y-metin);
+    }
+
+    .tk-suresi-gecti {
+        display: inline-block;
+        margin-left: 5px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--y-warning) 16%, transparent);
+        color: var(--y-warning);
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .tk-durum-form {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .tk-durum-form select {
+        width: auto;
+        min-width: 132px;
+        padding: 6px 9px;
+        font-size: 12.5px;
+    }
+
+    .tk-eylem {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+    }
+
+    .tk-eylem form {
+        display: inline;
+    }
 </style>
 
-<!-- Header -->
-<div class="page-header-actions">
+<div class="page-header">
     <div>
-        <h2 style="font-size: 24px; font-weight: 700; color: #1e293b;">Teklif Yönetimi</h2>
-        <p style="color: #64748b; font-size: 14px;">Müşteri tekliflerini oluşturun ve yönetin.</p>
+        <h1>Teklifler</h1>
+        <p><?= number_format($toplam, 0, ',', '.') ?> kayıt<?= $arama !== '' || $suzgec !== '' ? ' (süzülmüş)' : '' ?></p>
     </div>
-    <a href="proposal-create.php" class="btn btn-primary" style="padding: 12px 24px; background: #6366f1; color: white; border-radius: 10px; text-decoration: none; border: none;">
-        <i class="fas fa-plus"></i> <span style="font-weight: 600;">Yeni Teklif Oluştur</span>
-    </a>
+    <?php if ($tabloVar && is_file(__DIR__ . '/proposal-create.php')): ?>
+        <a href="proposal-create.php" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Yeni teklif
+        </a>
+    <?php endif; ?>
 </div>
 
-<!-- Stats -->
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-icon" style="background: #e0e7ff; color: #4f46e5;"><i class="fas fa-file-invoice"></i></div>
-        <div class="stat-info">
-            <h3><?= $stats['total_count'] ?? 0 ?></h3>
-            <p>Toplam Teklif</p>
-        </div>
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= $mesaj['tip'] === 'success' ? 'success' : 'error' ?>">
+        <i class="fas fa-<?= $mesaj['tip'] === 'success' ? 'circle-check' : 'circle-exclamation' ?> alert-icon"></i>
+        <span><?= htmlspecialchars((string) $mesaj['metin']) ?></span>
     </div>
-    <div class="stat-card">
-        <div class="stat-icon" style="background: #fef3c7; color: #d97706;"><i class="fas fa-clock"></i></div>
-        <div class="stat-info">
-            <h3><?= $stats['sent_count'] ?? 0 ?></h3>
-            <p>Bekleyen / Gönderilen</p>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon" style="background: #d1fae5; color: #059669;"><i class="fas fa-check-circle"></i></div>
-        <div class="stat-info">
-            <h3><?= $stats['accepted_count'] ?? 0 ?></h3>
-            <p>Onaylanan</p>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon" style="background: #f3e8ff; color: #9333ea;"><i class="fas fa-coins"></i></div>
-        <div class="stat-info">
-            <h3><?= number_format((float)($stats['accepted_amount'] ?? 0), 0) ?>₺</h3>
-            <p>Kazanılan Tutar</p>
-        </div>
-    </div>
-</div>
+<?php endif; ?>
 
-<!-- Filters -->
-<div class="filter-tabs">
-    <a href="proposals.php" class="filter-tab <?= !$statusFilter ? 'active' : '' ?>">Tümü</a>
-    <a href="proposals.php?status=Draft" class="filter-tab <?= $statusFilter == 'Draft' ? 'active' : '' ?>"><i class="fas fa-pencil-alt" style="margin-right:4px;"></i> Taslak</a>
-    <a href="proposals.php?status=Sent" class="filter-tab <?= $statusFilter == 'Sent' ? 'active' : '' ?>"><i class="fas fa-paper-plane" style="margin-right:4px;"></i> Gönderilen</a>
-    <a href="proposals.php?status=Accepted" class="filter-tab <?= $statusFilter == 'Accepted' ? 'active' : '' ?>"><i class="fas fa-check" style="margin-right:4px;"></i> Onaylanan</a>
-    <a href="proposals.php?status=Rejected" class="filter-tab <?= $statusFilter == 'Rejected' ? 'active' : '' ?>">Reddedilen</a>
-</div>
+<?php if (!$tabloVar): ?>
+    <div class="alert alert-error">
+        <i class="fas fa-circle-exclamation alert-icon"></i>
+        <span>
+            Teklif tablosu bulunamadı. Kurulum dosyasını çalıştırmanız gerekiyor:
+            <code>mysql -u root <?= htmlspecialchars(defined('DB_NAME') ? DB_NAME : 'vhm') ?>
+                &lt; install/whmvm-kurulum.sql</code>
+        </span>
+    </div>
+<?php else: ?>
 
-<!-- Table -->
-<div class="card border-0 shadow-sm" style="background:white; border-radius:12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-    <table class="table mb-0" style="width:100%; border-collapse:collapse;">
-        <thead>
-            <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-                <th style="padding:15px 20px; text-align:left; color:#64748b; font-weight:600; font-size:12px;">#ID</th>
-                <th style="padding:15px 20px; text-align:left; color:#64748b; font-weight:600; font-size:12px;">Teklif Konusu</th>
-                <th style="padding:15px 20px; text-align:left; color:#64748b; font-weight:600; font-size:12px;">Müşteri</th>
-                <th style="padding:15px 20px; text-align:left; color:#64748b; font-weight:600; font-size:12px;">Toplam Tutar</th>
-                <th style="padding:15px 20px; text-align:left; color:#64748b; font-weight:600; font-size:12px;">Oluşturma</th>
-                <th style="padding:15px 20px; text-align:left; color:#64748b; font-weight:600; font-size:12px;">Durum</th>
-                <th style="padding:15px 20px; text-align:right; color:#64748b; font-weight:600; font-size:12px;">İşlemler</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php if (empty($proposals)): ?>
-                <tr>
-                    <td colspan="7" class="text-center py-5">
-                        <div class="empty-state" style="padding:40px; text-align:center;">
-                            <i class="fas fa-folder-open icon" style="font-size: 40px; color: #cbd5e1; margin-bottom: 10px; display:block;"></i>
-                            <p style="color: #64748b; margin:0;">Henüz kayıtlı teklif bulunmuyor.</p>
-                        </div>
-                    </td>
-                </tr>
-            <?php else: ?>
-                <?php foreach ($proposals as $p): 
-                    $initial = strtoupper(substr($p['first_name'] ?? 'U', 0, 1));
-                    $statusColor = match($p['status']) { 'Draft' => '#64748b', 'Sent' => '#3b82f6', 'Accepted' => '#10b981', 'Rejected' => '#ef4444', 'Expired' => '#f59e0b', default => '#64748b' };
-                    $statusBg = match($p['status']) { 'Draft' => '#f1f5f9', 'Sent' => '#dbeafe', 'Accepted' => '#d1fae5', 'Rejected' => '#fee2e2', 'Expired' => '#fef3c7', default => '#f1f5f9' };
-                ?>
-                <tr class="proposal-row" style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding:16px 20px; vertical-align:middle;">
-                        <span style="font-family: monospace; font-weight: 600; color: #64748b;">#<?= str_pad((string)$p['id'], 5, '0', STR_PAD_LEFT) ?></span>
-                    </td>
-                    <td style="padding:16px 20px; vertical-align:middle;">
-                        <div style="font-weight: 600; color: #1e293b;"><?= htmlspecialchars($p['subject']) ?></div>
-                    </td>
-                    <td style="padding:16px 20px; vertical-align:middle;">
-                        <div class="client-info">
-                            <div class="client-avatar"><?= $initial ?></div>
-                            <div>
-                                <div style="font-weight: 500; font-size:14px; color:#1e293b;"><?= htmlspecialchars($p['first_name'] . ' ' . $p['last_name']) ?></div>
-                                <?php if ($p['company_name']): ?>
-                                    <div style="font-size: 12px; color: #64748b;"><?= htmlspecialchars($p['company_name']) ?></div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </td>
-                    <td style="padding:16px 20px; vertical-align:middle;">
-                        <span style="font-weight: 700; color: #0f172a;"><?= number_format((float)$p['total_amount'], 2) ?></span> 
-                        <span style="font-size: 12px; color: #64748b;"><?= $p['currency'] ?></span>
-                    </td>
-                    <td style="padding:16px 20px; vertical-align:middle; color: #64748b; font-size: 13px;">
-                        <?= date('d M Y', strtotime($p['created_at'])) ?>
-                        <div style="font-size: 11px; color: #94a3b8;"><?= date('H:i', strtotime($p['created_at'])) ?></div>
-                    </td>
-                    <td style="padding:16px 20px; vertical-align:middle;">
-                        <span class="badge" style="background: <?= $statusBg ?>; color: <?= $statusColor ?>; padding: 6px 12px; border-radius: 6px; font-size:12px; font-weight:600;">
-                            <?= match($p['status']) { 'Draft'=>'Taslak', 'Sent'=>'Gönderildi', 'Accepted'=>'Kabul Edildi', 'Rejected'=>'Reddedildi', default=>$p['status'] } ?>
-                        </span>
-                    </td>
-                    <td class="text-end" style="padding:16px 20px; vertical-align:middle; text-align:right;">
-                        <a href="proposal-view.php?id=<?= $p['id'] ?>" class="action-btn" title="Görüntüle"><i class="fas fa-eye"></i></a>
-                        <a href="proposal-edit.php?id=<?= $p['id'] ?>" class="action-btn" title="Düzenle"><i class="fas fa-pen"></i></a>
-                        <a href="proposals.php?delete=<?= $p['id'] ?>" class="action-btn delete" onclick="return confirm('Silmek istediğinize emin misiniz?')" title="Sil"><i class="fas fa-trash-alt"></i></a>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
+    <div class="tk-ozet">
+        <?php foreach ($ozet as $i => [$ad, $deger, $ikon, $filtre]): ?>
+            <a class="tk-ozet-kart <?= $filtre !== '' && $suzgec === $filtre ? 'secili' : '' ?>"
+                href="proposals.php<?= $filtre !== '' ? '?durum=' . $filtre : '' ?>">
+                <span class="tk-ozet-ikon"><i class="fas <?= $ikon ?>"></i></span>
+                <span>
+                    <b><?= $i === 3
+                        ? number_format((float) $deger, 2, ',', '.') . ' ₺'
+                        : number_format((float) $deger, 0, ',', '.') ?></b>
+                    <span><?= $ad ?></span>
+                </span>
+            </a>
+        <?php endforeach; ?>
+    </div>
+
+    <form class="tk-arac" method="get">
+        <?php if ($suzgec !== ''): ?>
+            <input type="hidden" name="durum" value="<?= htmlspecialchars($suzgec) ?>">
+        <?php endif; ?>
+        <div class="tk-ara">
+            <i class="fas fa-magnifying-glass"></i>
+            <input type="search" name="q" value="<?= htmlspecialchars($arama) ?>"
+                placeholder="Teklif konusu, müşteri adı veya e-posta…">
+        </div>
+        <div style="display:flex; gap:8px;">
+            <button type="submit" class="btn btn-outline"><i class="fas fa-filter"></i> Ara</button>
+            <?php if ($arama !== '' || $suzgec !== ''): ?>
+                <a href="proposals.php" class="btn btn-outline"><i class="fas fa-xmark"></i> Sıfırla</a>
             <?php endif; ?>
-        </tbody>
-    </table>
-</div>
+        </div>
+    </form>
 
-<?php include 'includes/footer.php'; ?>
+    <div class="tk-sarmal">
+        <?php if (!$teklifler): ?>
+            <div class="empty-state">
+                <i class="fas fa-file-signature"></i>
+                <h3><?= $arama !== '' || $suzgec !== '' ? 'Eşleşen teklif yok' : 'Henüz teklif yok' ?></h3>
+                <p><?= $arama !== '' || $suzgec !== ''
+                    ? 'Aramayı değiştirin ya da süzgeci sıfırlayın.'
+                    : 'Müşterilerinize hazırladığınız teklifler burada listelenir.' ?></p>
+                <?php if ($arama === '' && $suzgec === '' && is_file(__DIR__ . '/proposal-create.php')): ?>
+                    <a href="proposal-create.php" class="btn btn-primary" style="margin-top:14px;">
+                        <i class="fas fa-plus"></i> İlk teklifi hazırla
+                    </a>
+                <?php endif; ?>
+            </div>
+        <?php else: ?>
+            <table class="tk-tablo">
+                <thead>
+                    <tr>
+                        <th>Teklif</th>
+                        <th>Müşteri</th>
+                        <th class="tk-sag">Tutar</th>
+                        <th>Geçerlilik</th>
+                        <th>Durum</th>
+                        <th class="tk-sag">İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($teklifler as $t):
+                        $id = (int) $t['id'];
+                        $ad = trim((string) ($t['first_name'] ?? '') . ' ' . (string) ($t['last_name'] ?? ''));
+                        [$durumAd, $durumSinif] = $durumlar[$t['status']] ?? [(string) $t['status'], 'badge'];
+                        $gecti = !empty($t['valid_until'])
+                            && strtotime((string) $t['valid_until']) < strtotime(date('Y-m-d'))
+                            && !in_array($t['status'], ['Accepted', 'Rejected'], true);
+                        ?>
+                        <tr>
+                            <td class="tk-konu">
+                                <b><?= htmlspecialchars((string) $t['subject']) ?></b>
+                                <span>#<?= $id ?>
+                                    &middot; <?= date('d.m.Y', strtotime((string) $t['created_at'])) ?>
+                                    &middot; <?= (int) $t['kalem'] ?> kalem</span>
+                            </td>
+                            <td class="tk-musteri">
+                                <?php if ($ad !== ''): ?>
+                                    <b><?= htmlspecialchars($ad) ?></b>
+                                    <a href="client-view.php?id=<?= (int) $t['client_id'] ?>" dir="ltr">
+                                        <?= htmlspecialchars((string) ($t['email'] ?? '')) ?>
+                                    </a>
+                                <?php else: ?>
+                                    <b style="color:var(--y-metin-3)">Müşteri silinmiş</b>
+                                <?php endif; ?>
+                            </td>
+                            <td class="tk-sag">
+                                <span class="tk-tutar">
+                                    <?= number_format((float) $t['total_amount'], 2, ',', '.') ?>
+                                    <?= ($t['currency'] ?? 'TRY') === 'TRY' ? '₺' : htmlspecialchars((string) $t['currency']) ?>
+                                </span>
+                            </td>
+                            <td style="font-size:12.5px; color:var(--y-metin-3);">
+                                <?= !empty($t['valid_until']) ? date('d.m.Y', strtotime((string) $t['valid_until'])) : '—' ?>
+                                <?php if ($gecti): ?>
+                                    <span class="tk-suresi-gecti">geçti</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <form method="post" class="tk-durum-form">
+                                    <?= Guvenlik::alan() ?>
+                                    <input type="hidden" name="durum_id" value="<?= $id ?>">
+                                    <select name="durum" onchange="this.form.submit()">
+                                        <?php foreach ($durumlar as $kod => [$etiket, , ]): ?>
+                                            <option value="<?= $kod ?>" <?= $t['status'] === $kod ? 'selected' : '' ?>>
+                                                <?= $etiket ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <span class="badge <?= $durumSinif ?>"><?= $durumAd ?></span>
+                                </form>
+                            </td>
+                            <td class="tk-sag">
+                                <div class="tk-eylem">
+                                    <?php if (is_file(__DIR__ . '/proposal-view.php')): ?>
+                                        <a class="action-btn" href="proposal-view.php?id=<?= $id ?>" title="Görüntüle">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                    <?php endif; ?>
+                                    <?php if (is_file(__DIR__ . '/proposal-edit.php')): ?>
+                                        <a class="action-btn" href="proposal-edit.php?id=<?= $id ?>" title="Düzenle">
+                                            <i class="fas fa-pen"></i>
+                                        </a>
+                                    <?php endif; ?>
+                                    <form method="post"
+                                        onsubmit="return confirm(<?= htmlspecialchars(json_encode(
+                                            '"' . $t['subject'] . '" teklifi ve ' . (int) $t['kalem']
+                                            . ' kalemi silinecek. Devam edilsin mi?',
+                                            JSON_UNESCAPED_UNICODE
+                                        ), ENT_QUOTES) ?>);">
+                                        <?= Guvenlik::alan() ?>
+                                        <input type="hidden" name="delete" value="<?= $id ?>">
+                                        <button type="submit" class="action-btn" title="Sil">
+                                            <i class="fas fa-trash-can"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($sayfaSayisi > 1): ?>
+        <?php
+        $bag = static function (int $s) use ($arama, $suzgec): string {
+            $p = ['page' => $s];
+            if ($arama !== '') {
+                $p['q'] = $arama;
+            }
+            if ($suzgec !== '') {
+                $p['durum'] = $suzgec;
+            }
+            return 'proposals.php?' . http_build_query($p);
+        };
+        ?>
+        <div class="pagination">
+            <?php if ($sayfa > 1): ?>
+                <a href="<?= htmlspecialchars($bag($sayfa - 1)) ?>"><i class="fas fa-chevron-left"></i></a>
+            <?php endif; ?>
+            <?php for ($i = max(1, $sayfa - 2); $i <= min($sayfaSayisi, $sayfa + 2); $i++): ?>
+                <?php if ($i === $sayfa): ?>
+                    <span class="active"><?= $i ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars($bag($i)) ?>"><?= $i ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+            <?php if ($sayfa < $sayfaSayisi): ?>
+                <a href="<?= htmlspecialchars($bag($sayfa + 1)) ?>"><i class="fas fa-chevron-right"></i></a>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
+<?php endif; ?>
+
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
