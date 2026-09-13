@@ -1,0 +1,110 @@
+# ---------------------------------------------------------------
+# Bağımlılıklar
+# ---------------------------------------------------------------
+/vendor/
+/node_modules/
+
+# ---------------------------------------------------------------
+# Yapılandırma ve sırlar
+# ---------------------------------------------------------------
+/config/config.php
+/config/ip-config.php
+/config/config.production.php
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------
+# Müşteri verisi ve veritabanı dökümleri
+# Depoya kişisel veri girmemeli: ad, e-posta, telefon, adres,
+# vergi/TC no ve parola özetleri. Kurulum için yalnızca
+# install/whmvm-kurulum.sql tutulur (müşteri verisi içermez).
+# ---------------------------------------------------------------
+*.bson
+*.dump
+*.mwb
+/import/
+/backup/
+/backups/
+/install/clients_data.sql
+/install/whmvm_full*.sql
+/install/*_export.sql
+/install/*_backup*.sql
+/admin/delete-except.php
+
+# ---------------------------------------------------------------
+# Paketlenmiş çıktılar
+# ---------------------------------------------------------------
+# Kurulum paketi veritabanı dökümü içerir; döküm hex kodlu olduğu
+# için metin aramasına takılmaz. Sürüm paketi olarak GitHub
+# Releases üzerinden dağıtılmalı, depoya konmamalı.
+/WHMVM_Installer.zip
+/Moduller/
+*.zip
+
+# ---------------------------------------------------------------
+# Yedek ve geçici dosyalar
+# ---------------------------------------------------------------
+*.bak
+*.bak[0-9]*
+*.backup
+*.orig
+*.rej
+*.tmp
+*~
+*.swp
+
+# ---------------------------------------------------------------
+# Çalıştırma betikleri (yerel geliştirme)
+# ---------------------------------------------------------------
+*.bat
+*.ps1
+*.cmd
+
+# ---------------------------------------------------------------
+# Geliştirme notları — depoda yalnızca README.md bulunur
+# ---------------------------------------------------------------
+# Depoda YALNIZCA kök dizindeki README.md bulunur. Geliştirme
+# notları, modül ve vendor README dosyaları dahil, diğer bütün
+# .md dosyaları hariç tutulur.
+*.md
+!/README.md
+
+/CPANEL_DOSYA_KONTROL.md
+/DEPLOYMENT_CPANEL.md
+/INSTALLATION.md
+/MIGRATION_GUIDE.md
+/MODULE_DEVELOPMENT_GUIDE.md
+/PRODUCTION_CHECKLIST.md
+/QUICK_START.md
+/README_SERVER.md
+/NOTLAR*.md
+/TODO*.md
+
+# ---------------------------------------------------------------
+# Kullanılmayan eski kod
+# ---------------------------------------------------------------
+# templates/vtheme: WHMCS döneminden kalan tema (5,3 MB / 310 dosya).
+# Vitrin theme/ klasörünü kullanıyor; bu şablonlar hiçbir yerden
+# çağrılmıyor ve içlerinde canlı siteye mutlak bağlantılar var.
+/templates/vtheme/
+
+# gereklidocumnt: php-dna kütüphanesinin ikinci bir kopyası.
+# Kullanılan sürüm modules/registrars/domainnameapi/lib altında.
+/gereklidocumnt/
+
+# ---------------------------------------------------------------
+# Çalışma zamanı çıktıları
+# ---------------------------------------------------------------
+/uploads/
+/storage/adres-onbellek/
+*.log
+/logs/
+
+# ---------------------------------------------------------------
+# Editör ve işletim sistemi
+# ---------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

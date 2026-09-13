@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 120" width="360" height="120" role="img"
+    aria-label="VHM">
+    <title>VHM</title>
+    <!-- Açık zeminler için yatay kilit: işaret + kelime -->
+    <rect width="120" height="120" rx="27" fill="#2474f5" />
+    <g stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M28 26V94" stroke="#ffffff" />
+        <path d="M92 26V94" stroke="#ffffff" />
+        <path d="M28 80H92" stroke="#ffffff" />
+        <path d="M28 26 60 62 92 26" stroke="#ffffff" stroke-opacity="0.62" />
+    </g>
+    <text x="146" y="78" font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="54"
+        font-weight="700" letter-spacing="-1.5">
+        <tspan fill="#2474f5">V</tspan><tspan fill="#ffffff">HM</tspan>
+    </text>
+</svg>

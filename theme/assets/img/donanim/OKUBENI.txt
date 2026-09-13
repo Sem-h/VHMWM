@@ -1,0 +1,21 @@
+DONANIM FOTOĞRAFLARI
+====================
+
+store.php?group=fiziksel-sunucu sayfasındaki iki vitrin görseli buradan okunur.
+
+Beklenen dosya adları:
+
+    r730.webp      (ya da r730.jpg / r730.jpeg / r730.png)
+    vnx7600.webp   (ya da vnx7600.jpg / vnx7600.jpeg / vnx7600.png)
+
+Sıralama: webp > jpg > jpeg > png. İlk bulunan kullanılır.
+
+Dosyayı buraya kopyalamak yeterli; kodda değişiklik gerekmez.
+Dosya yoksa sayfa, yerine çizilmiş SVG görseli gösterir.
+
+Önerilen ölçü : 1200 x 400 px civarı, yatay (sunucunun ön paneli)
+Önerilen format: webp (dosya boyutu için) veya jpg
+
+UYARI: Dell ve Dell EMC'nin resmi ürün fotoğrafları telif korumalıdır.
+Buraya kendi veri merkezinizde çektiğiniz fotoğrafları ya da kullanım
+hakkına sahip olduğunuz görselleri koyun.

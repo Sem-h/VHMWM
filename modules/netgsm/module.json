@@ -1,0 +1,20 @@
+{
+    "name": "NetGSM SMS Modülü",
+    "slug": "netgsm",
+    "version": "1.0.0",
+    "description": "NetGSM SMS entegrasyonu - Müşterilere toplu veya tekli SMS bildirimleri gönderin",
+    "author": "WHMVM",
+    "author_url": "",
+    "category": "integration",
+    "min_whmvm_version": "1.0.0",
+    "dependencies": {
+        "php": ">=8.1",
+        "extensions": ["curl"]
+    },
+    "config": {
+        "usercode": "",
+        "password": "",
+        "msgheader": "",
+        "test_mode": true
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "name": "SEO Manager",
+    "slug": "seo-manager",
+    "version": "1.0.0",
+    "description": "SEO yönetim modülü - URL'ler, meta tags, sayfa başlıkları ve SEO ayarlarını yönetin",
+    "author": "Semih AKBAŞ",
+    "author_url": "",
+    "min_whmvm_version": "1.0.0",
+    "dependencies": {
+        "php": ">=8.1"
+    },
+    "config": {
+        "auto_detect_pages": true,
+        "default_meta_robots": "index, follow"
+    }
+}

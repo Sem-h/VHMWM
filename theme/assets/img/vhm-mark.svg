@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img"
+    aria-label="VHM">
+    <title>VHM</title>
+    <!--
+      Paylaşımlı gövde monogramı:
+        iki dikey gövde + yatay çizgi  -> H
+        iki dikey gövde + ortadaki V   -> M
+        açık tondaki V                 -> V
+    -->
+    <rect width="120" height="120" rx="27" fill="#2474f5" />
+    <g stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M28 26V94" stroke="#ffffff" />
+        <path d="M92 26V94" stroke="#ffffff" />
+        <path d="M28 80H92" stroke="#ffffff" />
+        <path d="M28 26 60 62 92 26" stroke="#ffffff" stroke-opacity="0.62" />
+    </g>
+</svg>

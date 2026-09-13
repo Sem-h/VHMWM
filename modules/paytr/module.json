@@ -1,0 +1,20 @@
+{
+    "name": "PayTR Ödeme Modülü",
+    "slug": "paytr",
+    "version": "1.0.0",
+    "description": "PayTR ödeme gateway entegrasyonu - Kredi kartı, havale/EFT ve mobil ödeme desteği",
+    "author": "WHMVM",
+    "author_url": "",
+    "category": "payment",
+    "min_whmvm_version": "1.0.0",
+    "dependencies": {
+        "php": ">=8.1",
+        "extensions": ["curl", "openssl"]
+    },
+    "config": {
+        "merchant_id": "",
+        "merchant_key": "",
+        "merchant_salt": "",
+        "test_mode": true
+    }
+}

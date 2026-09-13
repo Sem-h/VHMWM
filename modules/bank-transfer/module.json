@@ -1,0 +1,19 @@
+{
+    "name": "Havale/EFT Ödeme Modülü",
+    "slug": "bank-transfer",
+    "version": "1.0.0",
+    "description": "Havale ve EFT ile ödeme alma modülü - Manuel ödeme onayı ve banka bilgileri yönetimi",
+    "author": "WHMVM",
+    "author_url": "",
+    "category": "payment",
+    "min_whmvm_version": "1.0.0",
+    "dependencies": {
+        "php": ">=8.1"
+    },
+    "config": {
+        "banks": [],
+        "auto_confirm": false,
+        "require_receipt": true,
+        "instructions": "Lütfen ödeme yaparken açıklama kısmına referans numaranızı yazmayı unutmayın."
+    }
+}
