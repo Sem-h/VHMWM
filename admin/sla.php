@@ -177,19 +177,19 @@ require_once __DIR__ . '/includes/header.php';
 <style>
     .sl-kutu {
         margin-bottom: 20px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
-        background: #fff;
+        background: var(--y-yuzey);
         overflow: hidden;
     }
 
     .sl-kutu-basluk {
         padding: 13px 16px;
-        border-bottom: 1px solid #e5e7eb;
-        background: #f9fafb;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
         font-size: 13px;
         font-weight: 700;
-        color: #374151;
+        color: var(--y-metin-2);
     }
 
     .sl-kutu-govde {
@@ -206,7 +206,7 @@ require_once __DIR__ . '/includes/header.php';
     .sl-tablo td {
         padding: 9px 10px;
         text-align: left;
-        border-bottom: 1px solid #f1f3f5;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         vertical-align: middle;
     }
 
@@ -214,7 +214,7 @@ require_once __DIR__ . '/includes/header.php';
         font-size: 11px;
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .sl-tablo tr:last-child td {
@@ -225,7 +225,7 @@ require_once __DIR__ . '/includes/header.php';
     .sl-tablo input[type="number"] {
         width: 100%;
         padding: 7px 10px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-size: 13px;
     }
@@ -292,13 +292,13 @@ require_once __DIR__ . '/includes/header.php';
         margin-bottom: 5px;
         font-size: 12px;
         font-weight: 600;
-        color: #374151;
+        color: var(--y-metin-2);
     }
 
     .sl-ayar input {
         width: 100%;
         padding: 8px 11px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-size: 13px;
     }
@@ -307,7 +307,7 @@ require_once __DIR__ . '/includes/header.php';
         margin-top: 10px;
         font-size: 12px;
         line-height: 1.5;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 </style>
 

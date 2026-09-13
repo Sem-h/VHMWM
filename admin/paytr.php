@@ -67,7 +67,7 @@ include 'includes/header.php';
 
 <style>
 .settings-form {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     padding: 30px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -89,7 +89,7 @@ include 'includes/header.php';
 .form-control {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 10px;
     font-size: 14px;
     transition: all 0.3s;
@@ -104,7 +104,7 @@ include 'includes/header.php';
 .form-hint {
     display: block;
     margin-top: 6px;
-    color: #64748b;
+    color: var(--y-metin-3);
     font-size: 12px;
 }
 
@@ -113,7 +113,7 @@ include 'includes/header.php';
     align-items: center;
     justify-content: space-between;
     padding: 18px 20px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-radius: 12px;
     margin-bottom: 15px;
 }
@@ -126,7 +126,7 @@ include 'includes/header.php';
 
 .switch-info p {
     font-size: 12px;
-    color: #64748b;
+    color: var(--y-metin-3);
 }
 
 .switch-toggle {
@@ -160,7 +160,7 @@ include 'includes/header.php';
     width: 24px;
     left: 3px;
     bottom: 3px;
-    background-color: white;
+    background-color: var(--y-yuzey);
     transition: .3s;
     border-radius: 50%;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);

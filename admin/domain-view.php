@@ -94,13 +94,13 @@ $statusClass = match ($localDomain['status']) {
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
-    --z-bg: #f8fafc;
-    --z-card: #ffffff;
+    --z-bg: var(--y-yuzey-2);
+    --z-card: var(--y-yuzey);
     --z-primary: #0f172a;
     --z-accent: #3b82f6;
-    --z-text: #334155;
-    --z-muted: #94a3b8;
-    --z-border: #f1f5f9;
+    --z-text: var(--y-metin-2);
+    --z-muted: var(--y-metin-3);
+    --z-border: var(--y-cizgi);
 }
 
 body {
@@ -138,7 +138,7 @@ body {
     border-radius: 50px;
     font-weight: 600;
     font-size: 14px;
-    background: white;
+    background: var(--y-yuzey);
     box-shadow: 0 2px 10px rgba(0,0,0,0.05);
 }
 
@@ -201,7 +201,7 @@ body {
 
 .tile-icon {
     width: 36px; height: 36px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
     color: var(--z-primary);
@@ -224,7 +224,7 @@ body {
 .ns-input {
     width: 100%;
     padding: 12px 15px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border: 1px solid var(--z-border);
     border-radius: 12px;
     font-size: 14px;
@@ -233,7 +233,7 @@ body {
     transition: all 0.2s;
 }
 .ns-input:focus {
-    background: white;
+    background: var(--y-yuzey);
     border-color: var(--z-accent);
     outline: none;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
@@ -242,11 +242,11 @@ body {
 /* Client Info */
 .client-avatar-ph {
     width: 60px; height: 60px;
-    background: #e2e8f0;
+    background: var(--y-cizgi);
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-size: 24px;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin-bottom: 15px;
 }
 
@@ -273,8 +273,8 @@ body {
 .btn-zen-primary { background: var(--z-primary); color: white; }
 .btn-zen-primary:hover { opacity: 0.9; }
 
-.btn-zen-light { background: #f1f5f9; color: var(--z-text); }
-.btn-zen-light:hover { background: #e2e8f0; }
+.btn-zen-light { background: var(--y-yuzey-2); color: var(--z-text); }
+.btn-zen-light:hover { background: var(--y-cizgi); }
 
 .btn-zen-danger { background: #fef2f2; color: #ef4444; }
 .btn-zen-danger:hover { background: #fee2e2; }
@@ -285,7 +285,7 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 15px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-radius: 14px;
     margin-bottom: 10px;
 }

@@ -90,10 +90,10 @@ require_once __DIR__ . '/includes/header.php';
         align-items: center;
         gap: 8px;
         padding: 8px 14px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 8px;
-        background: #fff;
-        color: #374151;
+        background: var(--y-yuzey);
+        color: var(--y-metin-2);
         font-size: 13px;
         font-weight: 600;
         text-decoration: none;
@@ -112,8 +112,8 @@ require_once __DIR__ . '/includes/header.php';
     .kt-tablo {
         width: 100%;
         border-collapse: collapse;
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
         overflow: hidden;
         font-size: 13px;
@@ -123,16 +123,16 @@ require_once __DIR__ . '/includes/header.php';
     .kt-tablo td {
         padding: 12px 14px;
         text-align: left;
-        border-bottom: 1px solid #f1f3f5;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         vertical-align: top;
     }
 
     .kt-tablo th {
-        background: #f9fafb;
+        background: var(--y-yuzey-2);
         font-size: 11px;
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .kt-tablo tr:last-child td {
@@ -140,7 +140,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .kt-adres {
-        color: #6b7280;
+        color: var(--y-metin-3);
         line-height: 1.5;
     }
 
@@ -173,13 +173,13 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .kt-rozet.kapandi {
-        background: #f3f4f6;
-        color: #6b7280;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-3);
     }
 
     .kt-tablo select {
         padding: 6px 8px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-size: 12px;
     }
@@ -187,9 +187,9 @@ require_once __DIR__ . '/includes/header.php';
     .kt-bos {
         padding: 40px;
         text-align: center;
-        color: #6b7280;
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        color: var(--y-metin-3);
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
     }
 
@@ -202,10 +202,10 @@ require_once __DIR__ . '/includes/header.php';
     .kt-sayfalar a,
     .kt-sayfalar span {
         padding: 6px 11px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
-        background: #fff;
-        color: #374151;
+        background: var(--y-yuzey);
+        color: var(--y-metin-2);
         font-size: 13px;
         text-decoration: none;
     }

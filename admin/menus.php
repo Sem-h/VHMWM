@@ -253,7 +253,7 @@ include 'includes/header.php';
     }
 
     .menu-item-card {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border: 1px solid var(--border);
         border-radius: 12px;
         margin-bottom: 12px;
@@ -277,7 +277,7 @@ include 'includes/header.php';
     }
 
     .menu-item-drag {
-        color: #94a3b8;
+        color: var(--y-metin-3);
         margin-right: 12px;
         cursor: grab;
     }
@@ -381,7 +381,7 @@ include 'includes/header.php';
 
     /* Parent Select Styling */
     #parentMenuSelect {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border: 2px solid var(--border);
         padding: 12px 15px;
         font-size: 14px;
@@ -426,7 +426,7 @@ include 'includes/header.php';
         top: 0;
         bottom: 16px;
         width: 2px;
-        background: linear-gradient(to bottom, var(--primary) 0%, #e2e8f0 100%);
+        background: linear-gradient(to bottom, var(--primary) 0%, var(--y-cizgi) 100%);
         border-radius: 2px;
     }
 
@@ -434,7 +434,7 @@ include 'includes/header.php';
         display: flex;
         align-items: center;
         padding: 12px 15px;
-        background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
         border-radius: 8px;
         margin-bottom: 8px;
         border-left: 3px solid var(--primary);
@@ -535,7 +535,7 @@ include 'includes/header.php';
         width: 20px;
         left: 3px;
         bottom: 3px;
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 50%;
         transition: 0.3s;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -566,7 +566,7 @@ include 'includes/header.php';
         max-height: 200px;
         overflow-y: auto;
         padding: 12px;
-        background: white;
+        background: var(--y-yuzey);
         border: 1px solid var(--border);
         border-radius: 10px;
         margin-top: 8px;
@@ -584,7 +584,7 @@ include 'includes/header.php';
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
         border: 1px solid var(--border);
         border-radius: 8px;
         cursor: pointer;
@@ -609,7 +609,7 @@ include 'includes/header.php';
 
     .menu-preview h4 {
         font-size: 14px;
-        color: #94a3b8;
+        color: var(--y-metin-3);
         margin-bottom: 15px;
         display: flex;
         align-items: center;
@@ -646,13 +646,13 @@ include 'includes/header.php';
     }
 
     .menu-modal .modal-content {
-        background: white;
+        background: var(--y-yuzey);
         border: none;
         box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
     }
 
     .menu-modal .modal-header {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .menu-modal .modal-header h3 {
@@ -660,7 +660,7 @@ include 'includes/header.php';
     }
 
     .menu-modal .modal-close {
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
         color: var(--gray);
     }
 
@@ -674,17 +674,17 @@ include 'includes/header.php';
     }
 
     .menu-modal .form-control {
-        background: white;
+        background: var(--y-yuzey);
         color: var(--dark);
     }
 
     .menu-modal .modal-footer .btn-cancel {
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
         color: var(--dark);
     }
 
     .menu-modal .modal-footer .btn-cancel:hover {
-        background: #e2e8f0;
+        background: var(--y-cizgi);
     }
 </style>
 

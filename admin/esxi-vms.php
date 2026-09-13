@@ -129,7 +129,7 @@ include 'includes/header.php';
 
 /* Server Info */
 .server-info {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
     padding: 20px;
     margin-bottom: 20px;
@@ -210,7 +210,7 @@ include 'includes/header.php';
 }
 
 .vm-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     overflow: hidden;
@@ -239,7 +239,7 @@ include 'includes/header.php';
 .vm-icon {
     width: 48px;
     height: 48px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-radius: 12px;
     display: flex;
     align-items: center;
@@ -272,7 +272,7 @@ include 'includes/header.php';
 .vm-state.running { background: #d1fae5; color: #059669; }
 .vm-state.stopped { background: #fee2e2; color: #dc2626; }
 .vm-state.suspended { background: #fef3c7; color: #d97706; }
-.vm-state.unknown { background: #f1f5f9; color: #64748b; }
+.vm-state.unknown { background: var(--y-yuzey-2); color: var(--y-metin-3); }
 
 .vm-body {
     padding: 20px;
@@ -294,7 +294,7 @@ include 'includes/header.php';
 .spec-item i {
     width: 32px;
     height: 32px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -351,7 +351,7 @@ include 'includes/header.php';
 .empty-state {
     text-align: center;
     padding: 80px 40px;
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
 }
 
@@ -392,7 +392,7 @@ include 'includes/header.php';
 /* Refresh button */
 .refresh-btn {
     padding: 10px 20px;
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--dark);

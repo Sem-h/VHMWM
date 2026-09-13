@@ -179,7 +179,7 @@ include 'includes/header.php';
 }
 
 .ticket-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     overflow: hidden;
@@ -268,7 +268,7 @@ include 'includes/header.php';
     align-items: center;
     gap: 15px;
     padding: 15px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-radius: 10px;
 }
 
@@ -308,7 +308,7 @@ include 'includes/header.php';
     justify-content: space-between;
     align-items: center;
     padding: 12px 0;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--y-cizgi-soft);
 }
 
 .info-item:last-child {
@@ -332,7 +332,7 @@ include 'includes/header.php';
     border-radius: 8px;
     font-size: 13px;
     cursor: pointer;
-    background: white;
+    background: var(--y-yuzey);
 }
 
 .quick-select:focus {
@@ -348,7 +348,7 @@ include 'includes/header.php';
 
 .message-item {
     padding: 20px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--y-cizgi-soft);
 }
 
 .message-item:last-child {
@@ -425,7 +425,7 @@ include 'includes/header.php';
     line-height: 1.7;
     white-space: pre-wrap;
     font-size: 14px;
-    color: #374151;
+    color: var(--y-metin-2);
     padding-left: 54px;
 }
 
@@ -462,7 +462,7 @@ include 'includes/header.php';
 
 .canned-btn {
     padding: 6px 12px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border: none;
     border-radius: 6px;
     font-size: 12px;
@@ -471,7 +471,7 @@ include 'includes/header.php';
 }
 
 .canned-btn:hover {
-    background: #e2e8f0;
+    background: var(--y-cizgi);
 }
 
 /* Alert */
@@ -503,8 +503,8 @@ include 'includes/header.php';
 .badge-warning { background: #fef3c7; color: #92400e; }
 .badge-danger { background: #fee2e2; color: #991b1b; }
 .badge-info { background: #dbeafe; color: #1e40af; }
-.badge-gray { background: #f1f5f9; color: #475569; }
-.badge-secondary { background: #e2e8f0; color: #64748b; }
+.badge-gray { background: var(--y-yuzey-2); color: var(--y-metin-2); }
+.badge-secondary { background: var(--y-cizgi); color: var(--y-metin-3); }
 
 /* Buttons */
 .btn {
@@ -531,7 +531,7 @@ include 'includes/header.php';
 }
 
 .btn-outline {
-    background: white;
+    background: var(--y-yuzey);
     color: var(--dark);
     border: 1px solid var(--border);
 }

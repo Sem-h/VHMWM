@@ -78,9 +78,9 @@ include 'includes/header.php';
     :root {
         --up-primary: #6366f1;
         --up-success: #10b981;
-        --up-bg: #f8fafc;
-        --up-card: #ffffff;
-        --up-text: #1e293b;
+        --up-bg: var(--y-yuzey-2);
+        --up-card: var(--y-yuzey);
+        --up-text: var(--y-metin);
     }
 
     .update-container {
@@ -175,7 +175,7 @@ include 'includes/header.php';
 
     /* Settings Panel */
     .settings-toggle {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 16px;
         padding: 25px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
@@ -205,15 +205,15 @@ include 'includes/header.php';
 
     /* Release Notes */
     .release-notes-card {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 16px;
         padding: 30px;
         margin-top: 30px;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--y-cizgi);
     }
 
     .update-btn {
-        background: white;
+        background: var(--y-yuzey);
         color: #4f46e5;
         font-weight: 700;
         padding: 16px 32px;

@@ -208,7 +208,7 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     padding: 24px;
     position: relative;
@@ -271,7 +271,7 @@ include 'includes/header.php';
 
 /* Search & Filter Card */
 .filter-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     padding: 24px;
     margin-bottom: 24px;
@@ -291,17 +291,17 @@ include 'includes/header.php';
 .search-box input {
     width: 100%;
     padding: 14px 20px 14px 48px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 12px;
     font-size: 14px;
     transition: all 0.3s;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
 }
 
 .search-box input:focus {
     outline: none;
     border-color: var(--primary);
-    background: white;
+    background: var(--y-yuzey);
     box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
 }
 
@@ -316,10 +316,10 @@ include 'includes/header.php';
 
 .filter-select {
     padding: 14px 20px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 12px;
     font-size: 14px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     cursor: pointer;
     min-width: 180px;
     transition: all 0.3s;
@@ -328,7 +328,7 @@ include 'includes/header.php';
 .filter-select:focus {
     outline: none;
     border-color: var(--primary);
-    background: white;
+    background: var(--y-yuzey);
 }
 
 .btn {
@@ -362,8 +362,8 @@ include 'includes/header.php';
 }
 
 .btn-outline {
-    background: white;
-    border: 2px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border: 2px solid var(--y-cizgi);
     color: var(--dark);
 }
 
@@ -380,7 +380,7 @@ include 'includes/header.php';
 
 /* Data Table */
 .table-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 4px 20px rgba(0,0,0,0.05);
@@ -388,7 +388,7 @@ include 'includes/header.php';
 
 .table-header {
     padding: 20px 24px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--y-cizgi);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -426,16 +426,16 @@ include 'includes/header.php';
     padding: 16px 20px;
     font-size: 11px;
     font-weight: 700;
-    color: #64748b;
+    color: var(--y-metin-3);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background: #f8fafc;
-    border-bottom: 2px solid #e2e8f0;
+    background: var(--y-yuzey-2);
+    border-bottom: 2px solid var(--y-cizgi);
 }
 
 .data-table td {
     padding: 18px 20px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--y-cizgi-soft);
     font-size: 14px;
     vertical-align: middle;
 }
@@ -491,13 +491,13 @@ include 'includes/header.php';
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+    background: linear-gradient(135deg, var(--y-yuzey-2), var(--y-cizgi));
     padding: 8px 14px;
     border-radius: 8px;
     font-family: 'Monaco', 'Consolas', monospace;
     font-size: 13px;
     font-weight: 600;
-    color: #475569;
+    color: var(--y-metin-2);
 }
 
 .code-badge::before {
@@ -555,7 +555,7 @@ include 'includes/header.php';
 .badge-danger { background: #fee2e2; color: #dc2626; }
 .badge-danger::before { background: #dc2626; }
 
-.badge-gray { background: #f1f5f9; color: #64748b; }
+.badge-gray { background: var(--y-yuzey-2); color: var(--y-metin-3); }
 .badge-gray::before { background: #64748b; }
 
 /* Alert */
@@ -591,7 +591,7 @@ include 'includes/header.php';
 .empty-state {
     text-align: center;
     padding: 80px 40px;
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.05);
 }
@@ -627,7 +627,7 @@ include 'includes/header.php';
     display: flex;
     justify-content: center;
     padding: 24px;
-    border-top: 1px solid #f1f5f9;
+    border-top: 1px solid var(--y-cizgi-soft);
 }
 
 .pagination {
@@ -641,8 +641,8 @@ include 'includes/header.php';
     display: flex;
     align-items: center;
     justify-content: center;
-    background: white;
-    border: 2px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border: 2px solid var(--y-cizgi);
     border-radius: 10px;
     color: var(--dark);
     text-decoration: none;
@@ -684,7 +684,7 @@ include 'includes/header.php';
 .modal.active { display: flex; }
 
 .modal-content {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 20px;
     width: 100%;
     max-width: 600px;
@@ -701,7 +701,7 @@ include 'includes/header.php';
 
 .modal-header {
     padding: 24px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--y-cizgi);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -720,7 +720,7 @@ include 'includes/header.php';
 .modal-close {
     width: 36px;
     height: 36px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border: none;
     border-radius: 10px;
     font-size: 20px;
@@ -745,7 +745,7 @@ include 'includes/header.php';
     align-items: center;
     gap: 16px;
     padding: 20px;
-    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    background: linear-gradient(135deg, var(--y-yuzey-2), var(--y-yuzey-2));
     border-radius: 14px;
     margin-bottom: 24px;
 }
@@ -783,11 +783,11 @@ include 'includes/header.php';
 }
 
 .info-card {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     padding: 16px;
     border-radius: 12px;
     text-align: center;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--y-cizgi);
 }
 
 .info-card label {
@@ -808,11 +808,11 @@ include 'includes/header.php';
 
 /* Form Sections */
 .form-section {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-radius: 14px;
     padding: 20px;
     margin-bottom: 20px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--y-cizgi);
 }
 
 .form-section-title {
@@ -838,17 +838,17 @@ include 'includes/header.php';
     font-size: 13px;
     font-weight: 600;
     margin-bottom: 8px;
-    color: #475569;
+    color: var(--y-metin-2);
 }
 
 .form-control {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 10px;
     font-size: 14px;
     transition: all 0.2s;
-    background: white;
+    background: var(--y-yuzey);
 }
 
 .form-control:focus {
@@ -887,11 +887,11 @@ textarea.form-control {
 }
 
 .payment-details-box {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 10px;
     padding: 14px;
     font-size: 13px;
-    color: #475569;
+    color: var(--y-metin-2);
     white-space: pre-wrap;
     font-family: inherit;
     border: 1px solid rgba(0,0,0,0.1);

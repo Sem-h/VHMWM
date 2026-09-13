@@ -105,19 +105,19 @@ require_once __DIR__ . '/includes/header.php';
 <style>
     .df-kutu {
         margin-bottom: 20px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
-        background: #fff;
+        background: var(--y-yuzey);
         overflow: hidden;
     }
 
     .df-kutu-basluk {
         padding: 13px 16px;
-        border-bottom: 1px solid #e5e7eb;
-        background: #f9fafb;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
         font-size: 13px;
         font-weight: 700;
-        color: #374151;
+        color: var(--y-metin-2);
     }
 
     .df-kutu-govde {
@@ -136,13 +136,13 @@ require_once __DIR__ . '/includes/header.php';
         margin-bottom: 5px;
         font-size: 12px;
         font-weight: 600;
-        color: #374151;
+        color: var(--y-metin-2);
     }
 
     .df-alan input {
         width: 130px;
         padding: 8px 11px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-size: 13px;
     }
@@ -151,14 +151,14 @@ require_once __DIR__ . '/includes/header.php';
         margin-top: 10px;
         font-size: 12px;
         line-height: 1.5;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .df-tablo {
         width: 100%;
         border-collapse: collapse;
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
         overflow: hidden;
         font-size: 13px;
@@ -168,15 +168,15 @@ require_once __DIR__ . '/includes/header.php';
     .df-tablo td {
         padding: 10px 12px;
         text-align: left;
-        border-bottom: 1px solid #f1f3f5;
+        border-bottom: 1px solid var(--y-cizgi-soft);
     }
 
     .df-tablo thead th {
-        background: #f9fafb;
+        background: var(--y-yuzey-2);
         font-size: 11px;
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .df-tablo tr:last-child td {
@@ -186,7 +186,7 @@ require_once __DIR__ . '/includes/header.php';
     .df-tablo input[type="number"] {
         width: 108px;
         padding: 6px 9px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-size: 13px;
         text-align: right;
@@ -198,12 +198,12 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .df-sil {
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
-        background: #fff;
+        background: var(--y-yuzey);
         padding: 5px 9px;
         font-size: 12px;
-        color: #6b7280;
+        color: var(--y-metin-3);
         cursor: pointer;
     }
 
@@ -215,9 +215,9 @@ require_once __DIR__ . '/includes/header.php';
     .df-bos {
         padding: 34px;
         text-align: center;
-        color: #6b7280;
-        background: #fff;
-        border: 1px dashed #e5e7eb;
+        color: var(--y-metin-3);
+        background: var(--y-yuzey);
+        border: 1px dashed var(--y-cizgi);
         border-radius: 10px;
     }
 

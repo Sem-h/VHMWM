@@ -170,7 +170,7 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 24px;
@@ -220,7 +220,7 @@ include 'includes/header.php';
 }
 
 .server-card {
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 20px;
     overflow: hidden;
@@ -439,7 +439,7 @@ include 'includes/header.php';
     font-size: 13px;
     font-weight: 600;
     border: 1px solid var(--border);
-    background: white;
+    background: var(--y-yuzey);
     cursor: pointer;
     transition: all 0.3s;
     display: flex;
@@ -499,7 +499,7 @@ include 'includes/header.php';
 .empty-state {
     text-align: center;
     padding: 80px 40px;
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 20px;
 }
@@ -541,7 +541,7 @@ include 'includes/header.php';
 }
 
 .modal-content {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 20px;
     max-width: 550px;
     width: 90%;

@@ -124,17 +124,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_service_info']))
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: var(--y-metin-2); }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
         .header { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-        .content { background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; }
+        .content { background: var(--y-yuzey-2); padding: 30px; border: 1px solid var(--y-cizgi); }
         .section { margin-bottom: 25px; }
-        .section-title { font-size: 18px; font-weight: 600; color: #6366f1; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0; }
+        .section-title { font-size: 18px; font-weight: 600; color: #6366f1; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid var(--y-cizgi); }
         .info-row { display: flex; margin-bottom: 12px; }
-        .info-label { font-weight: 600; width: 150px; color: #64748b; }
-        .info-value { flex: 1; color: #0f172a; }
-        .credentials-box { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 10px; }
-        .footer { text-align: center; padding: 20px; color: #64748b; font-size: 12px; border-top: 1px solid #e2e8f0; }
+        .info-label { font-weight: 600; width: 150px; color: var(--y-metin-3); }
+        .info-value { flex: 1; color: var(--y-metin); }
+        .credentials-box { background: var(--y-yuzey); border: 1px solid var(--y-cizgi); border-radius: 8px; padding: 15px; margin-top: 10px; }
+        .footer { text-align: center; padding: 20px; color: var(--y-metin-3); font-size: 12px; border-top: 1px solid var(--y-cizgi); }
     </style>
 </head>
 <body>

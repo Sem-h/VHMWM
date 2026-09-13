@@ -94,7 +94,7 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: linear-gradient(135deg, #fff 0%, #f8fafc 100%);
+    background: linear-gradient(135deg, var(--y-yuzey) 0%, var(--y-yuzey-2) 100%);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 24px;
@@ -132,7 +132,7 @@ include 'includes/header.php';
 
 /* Pricing Table */
 .pricing-card {
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 16px;
     overflow: hidden;
@@ -140,7 +140,7 @@ include 'includes/header.php';
 }
 
 .pricing-card-header {
-    background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
     padding: 20px 24px;
     border-bottom: 1px solid var(--border);
     display: flex;
@@ -165,7 +165,7 @@ include 'includes/header.php';
 }
 
 .pricing-table th {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     padding: 14px 20px;
     text-align: left;
     font-size: 12px;
@@ -178,7 +178,7 @@ include 'includes/header.php';
 
 .pricing-table td {
     padding: 16px 20px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--y-cizgi-soft);
     vertical-align: middle;
 }
 
@@ -187,7 +187,7 @@ include 'includes/header.php';
 }
 
 .pricing-table tr:hover {
-    background: #fafbfc;
+    background: var(--y-yuzey-2);
 }
 
 .resource-info {
@@ -281,7 +281,7 @@ include 'includes/header.php';
     width: 44px;
     height: 24px;
     appearance: none;
-    background: #e2e8f0;
+    background: var(--y-cizgi);
     border-radius: 12px;
     cursor: pointer;
     position: relative;
@@ -297,7 +297,7 @@ include 'includes/header.php';
     position: absolute;
     width: 20px;
     height: 20px;
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 50%;
     top: 2px;
     left: 2px;
@@ -374,7 +374,7 @@ include 'includes/header.php';
 .save-bar {
     position: sticky;
     bottom: 20px;
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 16px 24px;

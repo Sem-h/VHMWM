@@ -104,9 +104,9 @@ require_once __DIR__ . '/includes/header.php';
 <style>
     .mk-ucret {
         margin-bottom: 22px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
-        background: #fff;
+        background: var(--y-yuzey);
         overflow: hidden;
     }
 
@@ -115,8 +115,8 @@ require_once __DIR__ . '/includes/header.php';
         cursor: pointer;
         font-size: 13px;
         font-weight: 700;
-        color: #374151;
-        background: #f9fafb;
+        color: var(--y-metin-2);
+        background: var(--y-yuzey-2);
         list-style: none;
     }
 
@@ -134,7 +134,7 @@ require_once __DIR__ . '/includes/header.php';
 
     .mk-ucret-govde {
         padding: 16px;
-        border-top: 1px solid #e5e7eb;
+        border-top: 1px solid var(--y-cizgi);
     }
 
     .mk-ucret-satir {
@@ -143,7 +143,7 @@ require_once __DIR__ . '/includes/header.php';
         gap: 14px;
         align-items: center;
         padding: 9px 0;
-        border-bottom: 1px solid #f1f3f5;
+        border-bottom: 1px solid var(--y-cizgi-soft);
     }
 
     .mk-ucret-satir:last-of-type {
@@ -153,12 +153,12 @@ require_once __DIR__ . '/includes/header.php';
     .mk-ucret-satir b {
         display: block;
         font-size: 13px;
-        color: #111827;
+        color: var(--y-metin);
     }
 
     .mk-ucret-satir span {
         font-size: 12px;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .mk-ucret-satir em {
@@ -171,7 +171,7 @@ require_once __DIR__ . '/includes/header.php';
     .mk-ucret input {
         width: 100%;
         padding: 8px 11px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-size: 13px;
         text-align: right;
@@ -185,7 +185,7 @@ require_once __DIR__ . '/includes/header.php';
         gap: 14px;
         margin-top: 16px;
         padding-top: 16px;
-        border-top: 1px solid #e5e7eb;
+        border-top: 1px solid var(--y-cizgi);
     }
 
     .mk-ucret-alt label {
@@ -193,7 +193,7 @@ require_once __DIR__ . '/includes/header.php';
         margin-bottom: 5px;
         font-size: 12px;
         font-weight: 600;
-        color: #374151;
+        color: var(--y-metin-2);
     }
 
     .mk-ucret-alt input {
@@ -213,10 +213,10 @@ require_once __DIR__ . '/includes/header.php';
         align-items: center;
         gap: 8px;
         padding: 8px 14px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 8px;
-        background: #fff;
-        color: #374151;
+        background: var(--y-yuzey);
+        color: var(--y-metin-2);
         font-size: 13px;
         font-weight: 600;
         text-decoration: none;
@@ -235,8 +235,8 @@ require_once __DIR__ . '/includes/header.php';
     .mk-tablo {
         width: 100%;
         border-collapse: collapse;
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
         overflow: hidden;
         font-size: 13px;
@@ -246,16 +246,16 @@ require_once __DIR__ . '/includes/header.php';
     .mk-tablo td {
         padding: 12px 14px;
         text-align: left;
-        border-bottom: 1px solid #f1f3f5;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         vertical-align: top;
     }
 
     .mk-tablo th {
-        background: #f9fafb;
+        background: var(--y-yuzey-2);
         font-size: 11px;
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .mk-tablo tr:last-child td {
@@ -263,7 +263,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .mk-soluk {
-        color: #6b7280;
+        color: var(--y-metin-3);
         line-height: 1.5;
     }
 
@@ -307,13 +307,13 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .mk-rozet.kapandi {
-        background: #f3f4f6;
-        color: #6b7280;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-3);
     }
 
     .mk-tablo select {
         padding: 6px 8px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-size: 12px;
         margin-bottom: 6px;
@@ -322,9 +322,9 @@ require_once __DIR__ . '/includes/header.php';
     .mk-bos {
         padding: 40px;
         text-align: center;
-        color: #6b7280;
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        color: var(--y-metin-3);
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
     }
 
@@ -337,10 +337,10 @@ require_once __DIR__ . '/includes/header.php';
     .mk-sayfalar a,
     .mk-sayfalar span {
         padding: 6px 11px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
-        background: #fff;
-        color: #374151;
+        background: var(--y-yuzey);
+        color: var(--y-metin-2);
         font-size: 13px;
         text-decoration: none;
     }

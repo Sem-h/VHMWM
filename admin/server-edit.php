@@ -124,7 +124,7 @@ include 'includes/header.php';
     --warning: #f59e0b;
     --danger: #ef4444;
     --dark: #1e293b;
-    --gray: #64748b;
+    --gray: var(--y-metin-3);
     --light: #f1f5f9;
     --white: #ffffff;
 }

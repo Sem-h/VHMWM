@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             --dark: #0f172a;
             --darker: #020617;
             --light: #f8fafc;
-            --gray: #64748b;
+            --gray: var(--y-metin-3);
         }
         
         * {
@@ -255,7 +255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Right Panel - Login */
         .login-panel {
             width: 520px;
-            background: white;
+            background: var(--y-yuzey);
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -369,18 +369,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             width: 100%;
             padding: 16px 20px;
             padding-left: 50px;
-            border: 2px solid #e2e8f0;
+            border: 2px solid var(--y-cizgi);
             border-radius: 14px;
             font-size: 15px;
             font-family: inherit;
             transition: all 0.3s;
-            background: #f8fafc;
+            background: var(--y-yuzey-2);
         }
         
         .input-wrapper input:focus {
             outline: none;
             border-color: var(--primary);
-            background: white;
+            background: var(--y-yuzey);
             box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
         
@@ -437,7 +437,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .remember-me .checkbox {
             width: 20px;
             height: 20px;
-            border: 2px solid #e2e8f0;
+            border: 2px solid var(--y-cizgi);
             border-radius: 6px;
             display: flex;
             align-items: center;
@@ -538,7 +538,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             content: '';
             flex: 1;
             height: 1px;
-            background: #e2e8f0;
+            background: var(--y-cizgi);
         }
         
         .divider span {
@@ -561,7 +561,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         .back-link:hover {
-            background: #f1f5f9;
+            background: var(--y-yuzey-2);
             color: var(--primary);
         }
         

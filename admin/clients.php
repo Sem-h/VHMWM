@@ -99,7 +99,7 @@ include 'includes/header.php';
     }
 
     .stat-card {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 16px;
         padding: 24px;
         display: flex;
@@ -143,12 +143,12 @@ include 'includes/header.php';
     .stat-value {
         font-size: 28px;
         font-weight: 800;
-        color: #1e293b;
+        color: var(--y-metin);
     }
 
     .stat-label {
         font-size: 13px;
-        color: #64748b;
+        color: var(--y-metin-3);
         margin-top: 2px;
     }
 
@@ -171,7 +171,7 @@ include 'includes/header.php';
     .page-title h1 {
         font-size: 28px;
         font-weight: 800;
-        color: #1e293b;
+        color: var(--y-metin);
         margin: 0;
     }
 
@@ -196,7 +196,7 @@ include 'includes/header.php';
 
     .search-box input {
         padding: 12px 20px 12px 45px;
-        border: 2px solid #e2e8f0;
+        border: 2px solid var(--y-cizgi);
         border-radius: 12px;
         font-size: 14px;
         width: 280px;
@@ -241,7 +241,7 @@ include 'includes/header.php';
 
     /* Clients Table */
     .clients-card {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 20px;
         overflow: hidden;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
@@ -253,7 +253,7 @@ include 'includes/header.php';
     }
 
     .clients-table thead {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .clients-table th {
@@ -261,17 +261,17 @@ include 'includes/header.php';
         text-align: left;
         font-size: 12px;
         font-weight: 700;
-        color: #64748b;
+        color: var(--y-metin-3);
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        border-bottom: 2px solid #e2e8f0;
+        border-bottom: 2px solid var(--y-cizgi);
     }
 
     .clients-table td {
         padding: 18px 20px;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         font-size: 14px;
-        color: #334155;
+        color: var(--y-metin-2);
     }
 
     .clients-table tbody tr {
@@ -279,7 +279,7 @@ include 'includes/header.php';
     }
 
     .clients-table tbody tr:hover {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     /* Client Info Cell */
@@ -306,7 +306,7 @@ include 'includes/header.php';
         margin: 0 0 3px 0;
         font-size: 15px;
         font-weight: 600;
-        color: #1e293b;
+        color: var(--y-metin);
     }
 
     .client-details h4:hover {
@@ -315,7 +315,7 @@ include 'includes/header.php';
 
     .client-details span {
         font-size: 13px;
-        color: #64748b;
+        color: var(--y-metin-3);
     }
 
     /* Contact Cell */
@@ -336,17 +336,17 @@ include 'includes/header.php';
     }
 
     .contact-info .phone {
-        color: #64748b;
+        color: var(--y-metin-3);
         font-size: 13px;
     }
 
     /* Company Badge */
     .company-badge {
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
         padding: 6px 12px;
         border-radius: 8px;
         font-size: 13px;
-        color: #475569;
+        color: var(--y-metin-2);
         display: inline-block;
         max-width: 200px;
         overflow: hidden;
@@ -355,7 +355,7 @@ include 'includes/header.php';
     }
 
     .company-badge.empty {
-        color: #94a3b8;
+        color: var(--y-metin-3);
         font-style: italic;
     }
 
@@ -366,7 +366,7 @@ include 'includes/header.php';
     }
 
     .balance.zero {
-        color: #94a3b8;
+        color: var(--y-metin-3);
     }
 
     /* Status Badge */
@@ -392,7 +392,7 @@ include 'includes/header.php';
 
     /* Date */
     .date-cell {
-        color: #64748b;
+        color: var(--y-metin-3);
         font-size: 13px;
     }
 
@@ -444,13 +444,13 @@ include 'includes/header.php';
         justify-content: space-between;
         align-items: center;
         padding: 20px 25px;
-        background: #f8fafc;
-        border-top: 1px solid #e2e8f0;
+        background: var(--y-yuzey-2);
+        border-top: 1px solid var(--y-cizgi);
     }
 
     .pagination-info {
         font-size: 14px;
-        color: #64748b;
+        color: var(--y-metin-3);
     }
 
     .pagination-links {
@@ -463,16 +463,16 @@ include 'includes/header.php';
         border-radius: 8px;
         font-size: 13px;
         font-weight: 600;
-        color: #64748b;
+        color: var(--y-metin-3);
         text-decoration: none;
-        background: white;
-        border: 1px solid #e2e8f0;
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
         transition: all 0.15s;
     }
 
     .pagination-links a:hover {
-        background: #f1f5f9;
-        color: #1e293b;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin);
     }
 
     .pagination-links a.active {
@@ -502,12 +502,12 @@ include 'includes/header.php';
     .empty-state h3 {
         font-size: 22px;
         font-weight: 700;
-        color: #1e293b;
+        color: var(--y-metin);
         margin-bottom: 10px;
     }
 
     .empty-state p {
-        color: #64748b;
+        color: var(--y-metin-3);
         margin-bottom: 25px;
     }
 
@@ -535,14 +535,14 @@ include 'includes/header.php';
 
     #addModal .form-group label {
         font-weight: 600;
-        color: #1e293b;
+        color: var(--y-metin);
         margin-bottom: 8px;
         display: block;
     }
 
     #addModal .form-control {
         border-radius: 10px;
-        border: 2px solid #e2e8f0;
+        border: 2px solid var(--y-cizgi);
         padding: 12px 16px;
     }
 
@@ -553,7 +553,7 @@ include 'includes/header.php';
 
     #addModal .modal-footer {
         padding: 20px 30px;
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border-radius: 0 0 20px 20px;
     }
 

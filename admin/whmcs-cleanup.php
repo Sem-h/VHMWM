@@ -165,8 +165,8 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: white;
-    border: 2px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border: 2px solid var(--y-cizgi);
     border-radius: 16px;
     padding: 25px;
     text-align: center;
@@ -192,13 +192,13 @@ include 'includes/header.php';
 
 .stat-card h3 {
     font-size: 32px;
-    color: #1e293b;
+    color: var(--y-metin);
     margin-bottom: 5px;
 }
 
 .stat-card p {
     font-size: 14px;
-    color: #64748b;
+    color: var(--y-metin-3);
 }
 
 .cleanup-grid {
@@ -214,7 +214,7 @@ include 'includes/header.php';
 }
 
 .cleanup-card {
-    background: white;
+    background: var(--y-yuzey);
     border: 2px solid #fecaca;
     border-radius: 16px;
     overflow: hidden;
@@ -252,7 +252,7 @@ include 'includes/header.php';
 
 .cleanup-card p {
     font-size: 14px;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin-bottom: 20px;
     line-height: 1.6;
 }
@@ -290,13 +290,13 @@ include 'includes/header.php';
 
 .hours-input label {
     font-size: 14px;
-    color: #475569;
+    color: var(--y-metin-2);
 }
 
 .hours-input input {
     width: 80px;
     padding: 10px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 8px;
     text-align: center;
     font-weight: 600;
@@ -377,14 +377,14 @@ include 'includes/header.php';
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: #64748b;
+    color: var(--y-metin-3);
     text-decoration: none;
     font-size: 14px;
     margin-bottom: 20px;
 }
 
 .back-link:hover {
-    color: #1e293b;
+    color: var(--y-metin);
 }
 </style>
 

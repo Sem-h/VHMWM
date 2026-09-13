@@ -124,7 +124,7 @@ include 'includes/header.php';
 }
 
 .stat-box {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
     padding: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -162,7 +162,7 @@ include 'includes/header.php';
 
 /* Filters */
 .filters {
-    background: white;
+    background: var(--y-yuzey);
     padding: 20px;
     border-radius: 12px;
     margin-bottom: 20px;
@@ -201,7 +201,7 @@ include 'includes/header.php';
 /* Table */
 .data-table {
     width: 100%;
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -219,18 +219,18 @@ include 'includes/header.php';
     font-weight: 600;
     color: var(--gray);
     text-transform: uppercase;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-bottom: 1px solid var(--border);
 }
 
 .data-table td {
     padding: 16px 18px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--y-cizgi-soft);
     font-size: 14px;
 }
 
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #fafbfc; }
+.data-table tr:hover td { background: var(--y-yuzey-2); }
 
 /* Badge */
 .badge {
@@ -272,7 +272,7 @@ include 'includes/header.php';
 .modal.active { display: flex; }
 
 .modal-content {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     width: 100%;
     max-width: 500px;
@@ -326,7 +326,7 @@ textarea.form-control {
 
 /* Payment Details */
 .payment-box {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     padding: 15px;
     border-radius: 10px;
     margin-bottom: 20px;
@@ -338,7 +338,7 @@ textarea.form-control {
 }
 
 .payment-box pre {
-    background: white;
+    background: var(--y-yuzey);
     padding: 10px;
     border-radius: 6px;
     font-size: 13px;
@@ -362,7 +362,7 @@ textarea.form-control {
 .empty-state {
     text-align: center;
     padding: 60px 40px;
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
 }
 
@@ -391,7 +391,7 @@ textarea.form-control {
 
 .pagination a {
     padding: 8px 14px;
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--dark);

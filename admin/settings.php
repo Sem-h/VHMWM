@@ -149,7 +149,7 @@ include 'includes/header.php';
         display: flex;
         gap: 8px;
         margin-bottom: 25px;
-        background: white;
+        background: var(--y-yuzey);
         padding: 8px;
         border-radius: 14px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -173,7 +173,7 @@ include 'includes/header.php';
     }
 
     .settings-tab:hover {
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
         color: var(--dark);
     }
 
@@ -209,7 +209,7 @@ include 'includes/header.php';
     }
 
     .settings-section {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 16px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         margin-bottom: 25px;
@@ -222,7 +222,7 @@ include 'includes/header.php';
         gap: 15px;
         padding: 25px;
         border-bottom: 1px solid var(--border);
-        background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
     }
 
     .section-header>div:last-child {
@@ -293,8 +293,8 @@ include 'includes/header.php';
     .form-control {
         width: 100%;
         padding: 14px 18px;
-        background: #f8fafc;
-        border: 2px solid #e2e8f0;
+        background: var(--y-yuzey-2);
+        border: 2px solid var(--y-cizgi);
         border-radius: 12px;
         color: var(--dark);
         font-size: 14px;
@@ -305,12 +305,12 @@ include 'includes/header.php';
     .form-control:focus {
         outline: none;
         border-color: var(--primary);
-        background: white;
+        background: var(--y-yuzey);
         box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
     }
 
     .form-control::placeholder {
-        color: #94a3b8;
+        color: var(--y-metin-3);
     }
 
     select.form-control {
@@ -331,7 +331,7 @@ include 'includes/header.php';
     .form-hint {
         display: block;
         margin-top: 8px;
-        color: #64748b;
+        color: var(--y-metin-3);
         font-size: 12px;
     }
 
@@ -341,8 +341,8 @@ include 'includes/header.php';
         align-items: center;
         gap: 25px;
         padding: 25px;
-        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-        border: 2px dashed #e2e8f0;
+        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey-2) 100%);
+        border: 2px dashed var(--y-cizgi);
         border-radius: 16px;
         transition: all 0.3s;
     }
@@ -355,7 +355,7 @@ include 'includes/header.php';
     .upload-preview {
         width: 140px;
         height: 70px;
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 12px;
         display: flex;
         align-items: center;
@@ -377,7 +377,7 @@ include 'includes/header.php';
     }
 
     .upload-preview .no-image {
-        color: #94a3b8;
+        color: var(--y-metin-3);
         text-align: center;
         font-size: 12px;
     }
@@ -399,7 +399,7 @@ include 'includes/header.php';
     }
 
     .upload-content p {
-        color: #64748b;
+        color: var(--y-metin-3);
         font-size: 13px;
         margin-bottom: 15px;
     }
@@ -453,8 +453,8 @@ include 'includes/header.php';
     .color-value {
         flex: 1;
         padding: 14px 18px;
-        background: #f8fafc;
-        border: 2px solid #e2e8f0;
+        background: var(--y-yuzey-2);
+        border: 2px solid var(--y-cizgi);
         border-radius: 12px;
         font-family: 'SF Mono', 'Fira Code', monospace;
         font-size: 14px;
@@ -467,7 +467,7 @@ include 'includes/header.php';
         align-items: center;
         justify-content: space-between;
         padding: 18px 20px;
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border-radius: 12px;
         margin-bottom: 15px;
     }
@@ -484,7 +484,7 @@ include 'includes/header.php';
 
     .switch-info p {
         font-size: 12px;
-        color: #64748b;
+        color: var(--y-metin-3);
     }
 
     .switch-toggle {
@@ -518,7 +518,7 @@ include 'includes/header.php';
         width: 24px;
         left: 3px;
         bottom: 3px;
-        background-color: white;
+        background-color: var(--y-yuzey);
         transition: .3s;
         border-radius: 50%;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
@@ -587,8 +587,8 @@ include 'includes/header.php';
     }
 
     .btn-outline {
-        background: white;
-        border: 2px solid #e2e8f0;
+        background: var(--y-yuzey);
+        border: 2px solid var(--y-cizgi);
         color: var(--dark);
     }
 
@@ -621,7 +621,7 @@ include 'includes/header.php';
     .save-footer {
         position: sticky;
         bottom: 0;
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 16px;
         box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
         padding: 20px 25px;
@@ -635,7 +635,7 @@ include 'includes/header.php';
         display: flex;
         align-items: center;
         gap: 12px;
-        color: #64748b;
+        color: var(--y-metin-3);
         font-size: 14px;
     }
 

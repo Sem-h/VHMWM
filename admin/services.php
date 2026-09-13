@@ -201,7 +201,7 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 24px;
@@ -252,7 +252,7 @@ include 'includes/header.php';
 
 /* Filter Bar */
 .filter-bar {
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 20px;
@@ -335,7 +335,7 @@ include 'includes/header.php';
 
 /* Service Table */
 .service-card {
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 16px;
     overflow: hidden;
@@ -347,7 +347,7 @@ include 'includes/header.php';
 }
 
 .service-table th {
-    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    background: linear-gradient(135deg, var(--y-yuzey-2), var(--y-yuzey-2));
     padding: 16px 20px;
     text-align: left;
     font-size: 12px;
@@ -360,7 +360,7 @@ include 'includes/header.php';
 
 .service-table td {
     padding: 18px 20px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--y-cizgi-soft);
     vertical-align: middle;
 }
 
@@ -369,7 +369,7 @@ include 'includes/header.php';
 }
 
 .service-table tr:hover {
-    background: #fafbfc;
+    background: var(--y-yuzey-2);
 }
 
 /* Service Info */
@@ -427,13 +427,13 @@ include 'includes/header.php';
 .client-avatar {
     width: 38px;
     height: 38px;
-    background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+    background: linear-gradient(135deg, var(--y-cizgi), #cbd5e1);
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 600;
-    color: #64748b;
+    color: var(--y-metin-3);
     font-size: 14px;
 }
 
@@ -535,7 +535,7 @@ include 'includes/header.php';
 
 .status-badge.terminated, .status-badge.cancelled {
     background: rgba(100, 116, 139, 0.1);
-    color: #64748b;
+    color: var(--y-metin-3);
 }
 
 .cancel-request-badge {
@@ -563,7 +563,7 @@ include 'includes/header.php';
     height: 36px;
     border-radius: 10px;
     border: 1px solid var(--border);
-    background: white;
+    background: var(--y-yuzey);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -683,7 +683,7 @@ include 'includes/header.php';
 }
 
 .modal-box {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 20px;
     padding: 30px;
     max-width: 420px;
@@ -757,7 +757,7 @@ include 'includes/header.php';
     border-radius: 10px;
     font-size: 14px;
     margin-bottom: 20px;
-    background: white;
+    background: var(--y-yuzey);
 }
 
 /* Responsive */

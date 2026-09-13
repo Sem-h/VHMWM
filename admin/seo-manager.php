@@ -184,7 +184,7 @@ include 'includes/header.php';
 
 <style>
 .seo-form {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     padding: 30px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -217,7 +217,7 @@ include 'includes/header.php';
 .form-control {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 10px;
     font-size: 14px;
     transition: all 0.3s;
@@ -235,7 +235,7 @@ textarea.form-control {
 }
 
 .seo-pages-list {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     padding: 30px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -246,12 +246,12 @@ textarea.form-control {
     align-items: center;
     justify-content: space-between;
     padding: 20px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--y-cizgi);
     transition: all 0.3s;
 }
 
 .page-item:hover {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
 }
 
 .page-item:last-child {
@@ -270,7 +270,7 @@ textarea.form-control {
 
 .page-info p {
     font-size: 13px;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin-bottom: 4px;
 }
 
@@ -278,7 +278,7 @@ textarea.form-control {
     font-family: monospace;
     font-size: 12px;
     color: var(--primary);
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     padding: 4px 8px;
     border-radius: 4px;
     display: inline-block;
@@ -305,8 +305,8 @@ textarea.form-control {
 }
 
 .btn-outline {
-    background: white;
-    border: 2px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border: 2px solid var(--y-cizgi);
     color: var(--dark);
 }
 

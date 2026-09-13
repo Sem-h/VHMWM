@@ -135,13 +135,13 @@ include 'includes/header.php';
 <style>
     :root {
         --m-primary: #6366f1;
-        --m-bg: #f8fafc;
-        --m-card: #ffffff;
-        --m-text: #1e293b;
+        --m-bg: var(--y-yuzey-2);
+        --m-card: var(--y-yuzey);
+        --m-text: var(--y-metin);
     }
 
     body {
-        background-color: #f1f5f9;
+        background-color: var(--y-yuzey-2);
     }
 
     .module-header-area {
@@ -181,13 +181,13 @@ include 'includes/header.php';
     }
 
     .cat-btn {
-        background: white;
-        border: 1px solid #e2e8f0;
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
         padding: 10px 20px;
         border-radius: 50px;
         font-size: 14px;
         font-weight: 600;
-        color: #64748b;
+        color: var(--y-metin-3);
         cursor: pointer;
         transition: all 0.2s;
         white-space: nowrap;
@@ -209,9 +209,9 @@ include 'includes/header.php';
 
     /* Module Card */
     .mod-card {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 20px;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--y-cizgi);
         overflow: hidden;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
@@ -234,7 +234,7 @@ include 'includes/header.php';
     }
 
     .mod-status-bar.inactive {
-        background: #e2e8f0;
+        background: var(--y-cizgi);
     }
 
     .mod-body {
@@ -252,7 +252,7 @@ include 'includes/header.php';
     .mod-icon {
         width: 56px;
         height: 56px;
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
         border-radius: 14px;
         display: flex;
         align-items: center;
@@ -275,8 +275,8 @@ include 'includes/header.php';
     }
 
     .mod-badge.inactive {
-        background: #f1f5f9;
-        color: #64748b;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-3);
     }
 
     .mod-title {
@@ -288,7 +288,7 @@ include 'includes/header.php';
 
     .mod-desc {
         font-size: 13px;
-        color: #64748b;
+        color: var(--y-metin-3);
         line-height: 1.6;
         margin-bottom: 20px;
         display: -webkit-box;
@@ -301,16 +301,16 @@ include 'includes/header.php';
         display: flex;
         gap: 15px;
         font-size: 12px;
-        color: #94a3b8;
+        color: var(--y-metin-3);
         margin-top: auto;
-        border-top: 1px solid #f1f5f9;
+        border-top: 1px solid var(--y-cizgi-soft);
         padding-top: 15px;
     }
 
     .mod-actions {
         padding: 15px 25px;
-        background: #f8fafc;
-        border-top: 1px solid #e2e8f0;
+        background: var(--y-yuzey-2);
+        border-top: 1px solid var(--y-cizgi);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -326,14 +326,14 @@ include 'includes/header.php';
         justify-content: center;
         cursor: pointer;
         transition: all 0.2s;
-        background: white;
-        border: 1px solid #e2e8f0;
-        color: #64748b;
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
+        color: var(--y-metin-3);
     }
 
     .btn-icon:hover {
-        background: #f1f5f9;
-        color: #1e293b;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin);
     }
 
     .btn-icon.delete:hover {
@@ -383,7 +383,7 @@ include 'includes/header.php';
     }
 
     .upload-card {
-        background: white;
+        background: var(--y-yuzey);
         padding: 40px;
         border-radius: 24px;
         width: 100%;
@@ -393,12 +393,12 @@ include 'includes/header.php';
     }
 
     .drop-zone {
-        border: 3px dashed #e2e8f0;
+        border: 3px dashed var(--y-cizgi);
         border-radius: 16px;
         padding: 40px 20px;
         margin: 20px 0;
         transition: all 0.2s;
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         cursor: pointer;
     }
 

@@ -214,7 +214,7 @@ include 'includes/header.php';
 
 /* Sidebar */
 .config-sidebar {
-    background: #fff;
+    background: var(--y-yuzey);
     border-radius: 16px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     overflow: hidden;
@@ -252,11 +252,11 @@ include 'includes/header.php';
     transition: all 0.3s;
     margin-bottom: 8px;
     text-decoration: none;
-    color: #475569;
+    color: var(--y-metin-2);
 }
 
 .group-item:hover {
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
 }
 
 .group-item.active {
@@ -270,7 +270,7 @@ include 'includes/header.php';
 }
 
 .group-item .group-count {
-    background: #e2e8f0;
+    background: var(--y-cizgi);
     padding: 4px 10px;
     border-radius: 20px;
     font-size: 12px;
@@ -289,10 +289,10 @@ include 'includes/header.php';
     gap: 8px;
     width: 100%;
     padding: 14px;
-    background: #f8fafc;
-    border: 2px dashed #e2e8f0;
+    background: var(--y-yuzey-2);
+    border: 2px dashed var(--y-cizgi);
     border-radius: 12px;
-    color: #64748b;
+    color: var(--y-metin-3);
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s;
@@ -306,7 +306,7 @@ include 'includes/header.php';
 
 /* Main Content */
 .config-main {
-    background: #fff;
+    background: var(--y-yuzey);
     border-radius: 16px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     overflow: hidden;
@@ -314,7 +314,7 @@ include 'includes/header.php';
 
 .main-header {
     padding: 25px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--y-cizgi);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -323,7 +323,7 @@ include 'includes/header.php';
 .main-header h2 {
     font-size: 20px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--y-metin);
     margin: 0;
     display: flex;
     align-items: center;
@@ -345,8 +345,8 @@ include 'includes/header.php';
 }
 
 .option-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: var(--y-yuzey-2);
+    border: 1px solid var(--y-cizgi);
     border-radius: 16px;
     margin-bottom: 20px;
     overflow: hidden;
@@ -354,8 +354,8 @@ include 'includes/header.php';
 
 .option-header {
     padding: 18px 20px;
-    background: #fff;
-    border-bottom: 1px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border-bottom: 1px solid var(--y-cizgi);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -382,7 +382,7 @@ include 'includes/header.php';
 .option-details h4 {
     font-size: 16px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--y-metin);
     margin: 0 0 4px 0;
 }
 
@@ -391,7 +391,7 @@ include 'includes/header.php';
     align-items: center;
     gap: 12px;
     font-size: 13px;
-    color: #64748b;
+    color: var(--y-metin-3);
 }
 
 .option-meta .badge {
@@ -454,16 +454,16 @@ include 'includes/header.php';
     text-align: left;
     font-size: 12px;
     font-weight: 700;
-    color: #64748b;
+    color: var(--y-metin-3);
     text-transform: uppercase;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
 }
 
 .values-table td {
     padding: 14px 16px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--y-cizgi);
     font-size: 14px;
-    color: #334155;
+    color: var(--y-metin-2);
 }
 
 .values-table tr:last-child td {
@@ -492,13 +492,13 @@ include 'includes/header.php';
 }
 
 .values-table .price.zero {
-    color: #94a3b8;
+    color: var(--y-metin-3);
 }
 
 .add-value-row {
     padding: 15px 20px;
-    background: #fff;
-    border-top: 1px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border-top: 1px solid var(--y-cizgi);
 }
 
 .add-value-row button {
@@ -507,9 +507,9 @@ include 'includes/header.php';
     gap: 8px;
     padding: 10px 16px;
     background: transparent;
-    border: 2px dashed #e2e8f0;
+    border: 2px dashed var(--y-cizgi);
     border-radius: 10px;
-    color: #64748b;
+    color: var(--y-metin-3);
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s;
@@ -540,12 +540,12 @@ include 'includes/header.php';
 
 .empty-state h3 {
     font-size: 20px;
-    color: #1e293b;
+    color: var(--y-metin);
     margin: 0 0 10px 0;
 }
 
 .empty-state p {
-    color: #64748b;
+    color: var(--y-metin-3);
     margin: 0 0 25px 0;
 }
 
@@ -567,7 +567,7 @@ include 'includes/header.php';
 }
 
 .modal-content {
-    background: #fff;
+    background: var(--y-yuzey);
     border-radius: 20px;
     width: 100%;
     max-width: 500px;
@@ -583,7 +583,7 @@ include 'includes/header.php';
 
 .modal-header {
     padding: 25px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--y-cizgi);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -592,7 +592,7 @@ include 'includes/header.php';
 .modal-header h3 {
     font-size: 18px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--y-metin);
     margin: 0;
     display: flex;
     align-items: center;
@@ -607,15 +607,15 @@ include 'includes/header.php';
     width: 36px;
     height: 36px;
     border: none;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-radius: 10px;
     cursor: pointer;
-    color: #64748b;
+    color: var(--y-metin-3);
     transition: all 0.3s;
 }
 
 .modal-close:hover {
-    background: #e2e8f0;
+    background: var(--y-cizgi);
 }
 
 .modal-body {
@@ -624,7 +624,7 @@ include 'includes/header.php';
 
 .modal-footer {
     padding: 20px 25px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     display: flex;
     justify-content: flex-end;
     gap: 12px;
@@ -643,14 +643,14 @@ include 'includes/header.php';
     display: block;
     font-size: 14px;
     font-weight: 600;
-    color: #334155;
+    color: var(--y-metin-2);
     margin-bottom: 8px;
 }
 
 .form-control {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 12px;
     font-size: 14px;
     transition: all 0.3s;
@@ -705,14 +705,14 @@ include 'includes/header.php';
 }
 
 .btn-outline {
-    background: #fff;
-    border: 2px solid #e2e8f0;
-    color: #64748b;
+    background: var(--y-yuzey);
+    border: 2px solid var(--y-cizgi);
+    color: var(--y-metin-3);
 }
 
 .btn-outline:hover {
     border-color: #cbd5e1;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
 }
 
 .btn-danger {

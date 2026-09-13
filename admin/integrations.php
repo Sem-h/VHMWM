@@ -186,7 +186,7 @@ require_once __DIR__ . '/includes/header.php';
         display: flex;
         gap: 5px;
         margin-bottom: 0;
-        background: white;
+        background: var(--y-yuzey);
         padding: 20px 20px 0;
         border-radius: 16px 16px 0 0;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -194,7 +194,7 @@ require_once __DIR__ . '/includes/header.php';
 
     .tab-btn {
         padding: 15px 30px;
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
         border: none;
         border-radius: 12px 12px 0 0;
         font-size: 14px;
@@ -208,7 +208,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .tab-btn:hover {
-        background: #e2e8f0;
+        background: var(--y-cizgi);
         color: var(--dark);
     }
 
@@ -223,7 +223,7 @@ require_once __DIR__ . '/includes/header.php';
 
     .tab-content {
         display: none;
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 0 0 16px 16px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
@@ -275,7 +275,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .provider-card {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border: 2px solid var(--border);
         border-radius: 16px;
         overflow: hidden;
@@ -297,7 +297,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .provider-card-header:hover {
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
     }
 
     .provider-card.active .provider-card-header {
@@ -307,7 +307,7 @@ require_once __DIR__ . '/includes/header.php';
     .provider-logo {
         width: 60px;
         height: 60px;
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 12px;
         display: flex;
         align-items: center;
@@ -371,7 +371,7 @@ require_once __DIR__ . '/includes/header.php';
     .toggle-arrow {
         width: 36px;
         height: 36px;
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -397,7 +397,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .api-form {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 12px;
         padding: 25px;
         border: 1px solid var(--border);
@@ -418,7 +418,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .config-section {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border-radius: 12px;
         padding: 20px;
         margin-bottom: 20px;
@@ -438,7 +438,7 @@ require_once __DIR__ . '/includes/header.php';
         align-items: center;
         gap: 15px;
         padding: 12px 15px;
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 10px;
         margin-bottom: 10px;
     }
@@ -495,7 +495,7 @@ require_once __DIR__ . '/includes/header.php';
         width: 20px;
         left: 3px;
         bottom: 3px;
-        background-color: white;
+        background-color: var(--y-yuzey);
         transition: .3s;
         border-radius: 50%;
     }
@@ -539,7 +539,7 @@ require_once __DIR__ . '/includes/header.php';
         flex-direction: column;
         align-items: center;
         padding: 20px;
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border: 2px solid var(--border);
         border-radius: 12px;
         cursor: pointer;
@@ -548,7 +548,7 @@ require_once __DIR__ . '/includes/header.php';
 
     .provider-option label:hover {
         border-color: var(--primary);
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
     }
 
     .provider-option input:checked+label {

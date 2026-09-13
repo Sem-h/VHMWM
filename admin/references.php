@@ -170,13 +170,13 @@ include 'includes/header.php';
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
-    --bg-color: #f8fafc;
-    --card-bg: #ffffff;
+    --bg-color: var(--y-yuzey-2);
+    --card-bg: var(--y-yuzey);
     --primary: #4f46e5;
     --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-    --text-main: #0f172a;
-    --text-muted: #64748b;
-    --border: #e2e8f0;
+    --text-main: var(--y-metin);
+    --text-muted: var(--y-metin-3);
+    --border: var(--y-cizgi);
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
     --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
     --shadow-lg: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
@@ -184,7 +184,7 @@ include 'includes/header.php';
 
 body {
     font-family: 'Plus Jakarta Sans', sans-serif;
-    background-color: #f1f5f9;
+    background-color: var(--y-yuzey-2);
     background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
     background-size: 24px 24px;
 }
@@ -199,7 +199,7 @@ body {
     justify-content: space-between;
     align-items: flex-end;
     margin-bottom: 30px;
-    background: white;
+    background: var(--y-yuzey);
     padding: 25px 30px;
     border-radius: 20px;
     box-shadow: var(--shadow-sm);
@@ -228,7 +228,7 @@ body {
 
 .stat-badge {
     padding: 10px 20px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-radius: 12px;
     border: 1px solid var(--border);
     text-align: center;
@@ -261,7 +261,7 @@ body {
 .filter-btn {
     padding: 10px 20px;
     border-radius: 50px;
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     color: var(--text-muted);
     font-size: 14px;
@@ -296,7 +296,7 @@ body {
 }
 
 .ref-card-item {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 24px;
     overflow: hidden;
     border: 1px solid rgba(226, 232, 240, 0.8);
@@ -315,7 +315,7 @@ body {
 
 .card-top-section {
     height: 160px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -347,7 +347,7 @@ body {
     top: 15px; left: 15px;
     width: 12px; height: 12px;
     border-radius: 50%;
-    background: #e2e8f0;
+    background: var(--y-cizgi);
     box-shadow: 0 0 0 4px white;
 }
 
@@ -386,7 +386,7 @@ body {
     display: inline-block;
     padding: 4px 12px;
     border-radius: 6px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     color: var(--primary);
     font-size: 11px;
     font-weight: 700;
@@ -411,7 +411,7 @@ body {
     display: flex;
     gap: 8px;
     padding-top: 15px;
-    border-top: 1px solid #f1f5f9;
+    border-top: 1px solid var(--y-cizgi-soft);
 }
 
 .btn-card {
@@ -432,7 +432,7 @@ body {
 }
 
 .btn-edit {
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     color: var(--text-main);
 }
 
@@ -484,7 +484,7 @@ body {
     top: 0; right: -500px;
     width: 450px;
     height: 100vh;
-    background: white;
+    background: var(--y-yuzey);
     z-index: 1000;
     box-shadow: -10px 0 50px rgba(0,0,0,0.1);
     transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -503,7 +503,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
 }
 
 .panel-body {
@@ -532,10 +532,10 @@ body {
 .form-input {
     width: 100%;
     padding: 14px 18px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 12px;
     font-size: 14px;
-    background: white;
+    background: var(--y-yuzey);
     transition: all 0.2s;
     outline: none;
 }

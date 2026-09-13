@@ -200,20 +200,20 @@ require_once __DIR__ . '/includes/header.php';
 <style>
     .bb-kutu {
         margin-bottom: 20px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
-        background: #fff;
+        background: var(--y-yuzey);
         overflow: hidden;
     }
 
     .bb-kutu summary,
     .bb-kutu-basluk {
         padding: 13px 16px;
-        border-bottom: 1px solid #e5e7eb;
-        background: #f9fafb;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
         font-size: 13px;
         font-weight: 700;
-        color: #374151;
+        color: var(--y-metin-2);
         cursor: pointer;
         list-style: none;
     }
@@ -243,7 +243,7 @@ require_once __DIR__ . '/includes/header.php';
         margin-bottom: 5px;
         font-size: 12px;
         font-weight: 600;
-        color: #374151;
+        color: var(--y-metin-2);
     }
 
     .bb-alan input[type="text"],
@@ -252,7 +252,7 @@ require_once __DIR__ . '/includes/header.php';
     .bb-alan textarea {
         width: 100%;
         padding: 8px 11px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-size: 13px;
         font-family: inherit;
@@ -270,7 +270,7 @@ require_once __DIR__ . '/includes/header.php';
         margin-top: 5px;
         font-size: 11px;
         line-height: 1.5;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .bb-satir {
@@ -284,7 +284,7 @@ require_once __DIR__ . '/includes/header.php';
         align-items: center;
         gap: 8px;
         font-size: 13px;
-        color: #374151;
+        color: var(--y-metin-2);
     }
 
     .bb-alt {
@@ -305,16 +305,16 @@ require_once __DIR__ . '/includes/header.php';
     .bb-tablo td {
         padding: 10px 12px;
         text-align: left;
-        border-bottom: 1px solid #f1f3f5;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         vertical-align: middle;
     }
 
     .bb-tablo thead th {
-        background: #f9fafb;
+        background: var(--y-yuzey-2);
         font-size: 11px;
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .bb-tablo tr:last-child td {
@@ -335,8 +335,8 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .bb-rozet.kapali {
-        background: #f3f4f6;
-        color: #6b7280;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-3);
     }
 
     .bb-rozet.kategori {
@@ -352,11 +352,11 @@ require_once __DIR__ . '/includes/header.php';
     .bb-eylem a,
     .bb-eylem button {
         padding: 5px 10px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
-        background: #fff;
+        background: var(--y-yuzey);
         font-size: 12px;
-        color: #374151;
+        color: var(--y-metin-2);
         text-decoration: none;
         cursor: pointer;
     }
@@ -380,12 +380,12 @@ require_once __DIR__ . '/includes/header.php';
 
     .bb-filtre a {
         padding: 7px 13px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 8px;
-        background: #fff;
+        background: var(--y-yuzey);
         font-size: 12.5px;
         font-weight: 600;
-        color: #374151;
+        color: var(--y-metin-2);
         text-decoration: none;
     }
 

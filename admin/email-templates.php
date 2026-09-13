@@ -103,7 +103,7 @@ if ((!$tableExists || $needsUpgrade) && isset($_GET['install'])) {
             ['ticket_reply', 'Destek Talebi Yanıtı', 'support', '[{site_name}] Destek Talebi #{ticket_id} Yanıtlandı', '<h2 style="color: #1e293b; margin: 0 0 20px 0;">Talebinize Yanıt Verildi</h2><p style="color: #475569;">Sayın <strong>{client_name}</strong>,</p><p style="color: #475569;">#{ticket_id} numaralı talebinize yanıt verildi.</p>', '["client_name", "ticket_id", "ticket_subject", "reply_message", "site_name"]'],
             ['service_activated', 'Hizmet Aktif Edildi', 'service', '[{site_name}] Hizmetiniz Aktif Edildi', '<h2 style="color: #1e293b; margin: 0 0 20px 0;">Hizmetiniz Aktif!</h2><p style="color: #475569;">Sayın <strong>{client_name}</strong>,</p><p style="color: #475569;"><strong>{product_name}</strong> hizmetiniz aktif edilmiştir.</p>', '["client_name", "product_name", "domain", "ip_address", "username", "password", "site_name"]'],
             ['service_suspended', 'Hizmet Askıya Alındı', 'service', '[{site_name}] Hizmetiniz Askıya Alındı', '<h2 style="color: #f59e0b; margin: 0 0 20px 0;">Hizmetiniz Askıya Alındı</h2><p style="color: #475569;">Sayın <strong>{client_name}</strong>,</p><p style="color: #475569;"><strong>{product_name}</strong> hizmetiniz askıya alınmıştır.</p>', '["client_name", "product_name", "suspend_reason", "site_name"]'],
-            ['service_info', 'Hizmet Bilgileri', 'service', '[{site_name}] Hizmet Bilgileriniz - {product_name}', '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; } .container { max-width: 600px; margin: 0 auto; padding: 20px; } .header { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; } .content { background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; } .section { margin-bottom: 25px; } .section-title { font-size: 18px; font-weight: 600; color: #6366f1; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0; } .info-row { display: flex; margin-bottom: 12px; } .info-label { font-weight: 600; width: 150px; color: #64748b; } .info-value { flex: 1; color: #0f172a; } .credentials-box { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 10px; } .footer { text-align: center; padding: 20px; color: #64748b; font-size: 12px; border-top: 1px solid #e2e8f0; }</style></head><body>{service_info_html}</body></html>', '["client_name", "product_name", "domain", "status", "billing_cycle", "amount", "next_due_date", "username", "password", "dedicated_ip", "control_panel_url", "control_panel_user", "control_panel_pass", "ftp_host", "ftp_user", "ftp_pass", "ftp_port", "mysql_host", "mysql_user", "mysql_pass", "nameservers", "extra_info", "notes", "site_name", "service_info_html"]'],
+            ['service_info', 'Hizmet Bilgileri', 'service', '[{site_name}] Hizmet Bilgileriniz - {product_name}', '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body { font-family: Arial, sans-serif; line-height: 1.6; color: var(--y-metin-2); } .container { max-width: 600px; margin: 0 auto; padding: 20px; } .header { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; } .content { background: var(--y-yuzey-2); padding: 30px; border: 1px solid var(--y-cizgi); } .section { margin-bottom: 25px; } .section-title { font-size: 18px; font-weight: 600; color: #6366f1; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid var(--y-cizgi); } .info-row { display: flex; margin-bottom: 12px; } .info-label { font-weight: 600; width: 150px; color: var(--y-metin-3); } .info-value { flex: 1; color: var(--y-metin); } .credentials-box { background: var(--y-yuzey); border: 1px solid var(--y-cizgi); border-radius: 8px; padding: 15px; margin-top: 10px; } .footer { text-align: center; padding: 20px; color: var(--y-metin-3); font-size: 12px; border-top: 1px solid var(--y-cizgi); }</style></head><body>{service_info_html}</body></html>', '["client_name", "product_name", "domain", "status", "billing_cycle", "amount", "next_due_date", "username", "password", "dedicated_ip", "control_panel_url", "control_panel_user", "control_panel_pass", "ftp_host", "ftp_user", "ftp_pass", "ftp_port", "mysql_host", "mysql_user", "mysql_pass", "nameservers", "extra_info", "notes", "site_name", "service_info_html"]'],
             ['order_received', 'Sipariş Alındı', 'order', '[{site_name}] Siparişiniz Alındı #{order_id}', '<h2 style="color: #1e293b; margin: 0 0 20px 0;">Siparişiniz Alındı!</h2><p style="color: #475569;">Sayın <strong>{client_name}</strong>,</p><p style="color: #475569;">Sipariş No: <strong>#{order_id}</strong><br>Ürün: <strong>{product_name}</strong></p>', '["client_name", "order_id", "product_name", "order_total", "site_name"]'],
         ];
         
@@ -240,7 +240,7 @@ include 'includes/header.php';
 }
 
 .email-hero .btn-hero-primary {
-    background: white;
+    background: var(--y-yuzey);
     color: #667eea;
     box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
@@ -270,7 +270,7 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     padding: 24px;
     display: flex;
@@ -323,7 +323,7 @@ include 'includes/header.php';
 }
 
 .category-section {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 20px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.04);
     overflow: hidden;
@@ -340,8 +340,8 @@ include 'includes/header.php';
     align-items: center;
     gap: 18px;
     padding: 24px 28px;
-    background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-    border-bottom: 1px solid #f1f5f9;
+    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
+    border-bottom: 1px solid var(--y-cizgi-soft);
 }
 
 .category-icon {
@@ -377,12 +377,12 @@ include 'includes/header.php';
 
 .category-badge {
     margin-left: auto;
-    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-cizgi) 100%);
     padding: 6px 14px;
     border-radius: 20px;
     font-size: 12px;
     font-weight: 700;
-    color: #64748b;
+    color: var(--y-metin-3);
 }
 
 /* Templates Table */
@@ -396,11 +396,11 @@ include 'includes/header.php';
     padding: 16px 28px;
     font-size: 11px;
     font-weight: 700;
-    color: #94a3b8;
+    color: var(--y-metin-3);
     text-transform: uppercase;
     letter-spacing: 1px;
-    background: #fafbfc;
-    border-bottom: 1px solid #f1f5f9;
+    background: var(--y-yuzey-2);
+    border-bottom: 1px solid var(--y-cizgi-soft);
 }
 
 .templates-table td {
@@ -445,7 +445,7 @@ include 'includes/header.php';
 }
 
 .template-subject {
-    color: #64748b;
+    color: var(--y-metin-3);
     font-size: 13px;
     max-width: 320px;
     white-space: nowrap;
@@ -604,7 +604,7 @@ include 'includes/header.php';
 }
 
 .empty-state p {
-    color: #64748b;
+    color: var(--y-metin-3);
     margin-bottom: 28px;
     font-size: 15px;
 }
@@ -650,7 +650,7 @@ include 'includes/header.php';
     .templates-table tr {
         display: block;
         padding: 20px;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--y-cizgi-soft);
     }
     .templates-table td {
         display: flex;
@@ -662,7 +662,7 @@ include 'includes/header.php';
     .templates-table td::before {
         content: attr(data-label);
         font-weight: 700;
-        color: #94a3b8;
+        color: var(--y-metin-3);
         font-size: 11px;
         text-transform: uppercase;
     }

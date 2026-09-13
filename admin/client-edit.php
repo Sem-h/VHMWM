@@ -356,7 +356,7 @@ include 'includes/header.php';
     }
 
     .form-card {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 16px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
@@ -463,7 +463,7 @@ include 'includes/header.php';
 
     /* Sidebar Cards */
     .info-card {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 16px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         overflow: hidden;
@@ -487,7 +487,7 @@ include 'includes/header.php';
         display: flex;
         justify-content: space-between;
         padding: 10px 0;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         font-size: 13px;
     }
 
@@ -512,7 +512,7 @@ include 'includes/header.php';
     .stat-item {
         text-align: center;
         padding: 15px;
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border-radius: 10px;
     }
 
@@ -566,7 +566,7 @@ include 'includes/header.php';
 
     .mini-table td {
         padding: 10px 0;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--y-cizgi-soft);
     }
 
     .mini-table tr:last-child td {
@@ -602,8 +602,8 @@ include 'includes/header.php';
     }
 
     .badge-gray {
-        background: #f1f5f9;
-        color: #475569;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-2);
     }
 
     /* Tab Navigation */
@@ -611,7 +611,7 @@ include 'includes/header.php';
         display: flex;
         gap: 5px;
         border-bottom: 2px solid var(--border);
-        background: white;
+        background: var(--y-yuzey);
         padding: 0 25px;
         margin-top: 20px;
         overflow-x: auto;
@@ -633,19 +633,19 @@ include 'includes/header.php';
 
     .tab-item:hover {
         color: var(--primary);
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .tab-item.active {
         color: var(--primary);
         border-bottom-color: var(--primary);
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .tab-content {
         display: none;
         padding: 25px;
-        background: white;
+        background: var(--y-yuzey);
     }
 
     .tab-content.active {
@@ -660,7 +660,7 @@ include 'includes/header.php';
     }
 
     .services-table thead {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .services-table th {
@@ -675,12 +675,12 @@ include 'includes/header.php';
 
     .services-table td {
         padding: 15px;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         font-size: 14px;
     }
 
     .services-table tbody tr:hover {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .service-actions {
@@ -706,7 +706,7 @@ include 'includes/header.php';
     }
 
     .invoices-table thead {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .invoices-table th {
@@ -721,12 +721,12 @@ include 'includes/header.php';
 
     .invoices-table td {
         padding: 15px;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         font-size: 14px;
     }
 
     .invoices-table tbody tr:hover {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     /* Tickets Table */
@@ -737,7 +737,7 @@ include 'includes/header.php';
     }
 
     .tickets-table thead {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .tickets-table th {
@@ -752,12 +752,12 @@ include 'includes/header.php';
 
     .tickets-table td {
         padding: 15px;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         font-size: 14px;
     }
 
     .tickets-table tbody tr:hover {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     /* Overview Stats Grid */

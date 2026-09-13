@@ -201,7 +201,7 @@ include 'includes/header.php';
     }
 
     .premium-card {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 24px;
         border: 1px solid var(--border);
         box-shadow: var(--shadow-soft);
@@ -243,7 +243,7 @@ include 'includes/header.php';
     }
 
     .action-btn:hover {
-        background: white;
+        background: var(--y-yuzey);
         border-color: var(--accent-blue);
         color: var(--accent-blue);
         transform: scale(1.02);
@@ -257,7 +257,7 @@ include 'includes/header.php';
     /* Table Styles */
     .modern-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; margin-top: -8px; }
     .modern-table tr { box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-    .modern-table td { padding: 16px; background: white; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .modern-table td { padding: 16px; background: var(--y-yuzey); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
     .modern-table td:first-child { border-left: 1px solid var(--border); border-radius: 12px 0 0 12px; }
     .modern-table td:last-child { border-right: 1px solid var(--border); border-radius: 0 12px 12px 0; }
     
@@ -285,7 +285,7 @@ include 'includes/header.php';
     .badge-warning { background: #fef3c7; color: #92400e; }
     .badge-danger { background: #fee2e2; color: #991b1b; }
     .badge-info { background: #dbeafe; color: #1e40af; }
-    .badge-gray { background: #f1f5f9; color: #475569; }
+    .badge-gray { background: var(--y-yuzey-2); color: var(--y-metin-2); }
 </style>
 
 <div class="dashboard-container">

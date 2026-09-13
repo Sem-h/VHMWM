@@ -39,14 +39,14 @@ include 'includes/header.php';
     /* PREMIUM INVOICE DESIGN */
     :root {
         --invoice-primary: #4f46e5;
-        --invoice-bg: #ffffff;
-        --invoice-text: #1e293b;
-        --invoice-muted: #64748b;
-        --invoice-border: #e2e8f0;
+        --invoice-bg: var(--y-yuzey);
+        --invoice-text: var(--y-metin);
+        --invoice-muted: var(--y-metin-3);
+        --invoice-border: var(--y-cizgi);
     }
 
     body {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .invoice-container {
@@ -131,7 +131,7 @@ include 'includes/header.php';
     /* Body Section */
     .invoice-body {
         padding: 40px 50px;
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
     }
 
     .bill-row {
@@ -142,16 +142,16 @@ include 'includes/header.php';
     }
 
     .bill-col {
-        background: white;
+        background: var(--y-yuzey);
         padding: 25px;
         border-radius: 12px;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--y-cizgi);
     }
 
     .bill-label {
         font-size: 10px;
         text-transform: uppercase;
-        color: #64748b;
+        color: var(--y-metin-3);
         font-weight: 700;
         letter-spacing: 1px;
         margin-bottom: 15px;
@@ -159,7 +159,7 @@ include 'includes/header.php';
 
     .bill-address strong {
         font-size: 18px;
-        color: #0f172a;
+        color: var(--y-metin);
         display: block;
         margin-bottom: 6px;
         font-weight: 700;
@@ -167,7 +167,7 @@ include 'includes/header.php';
 
     .bill-address div {
         font-size: 14px;
-        color: #64748b;
+        color: var(--y-metin-3);
         line-height: 1.6;
     }
 
@@ -178,14 +178,14 @@ include 'includes/header.php';
     }
 
     .date-item {
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         padding: 15px;
         border-radius: 8px;
     }
 
     .date-item h4 {
         font-size: 10px;
-        color: #64748b;
+        color: var(--y-metin-3);
         margin: 0 0 6px;
         text-transform: uppercase;
         font-weight: 700;
@@ -195,7 +195,7 @@ include 'includes/header.php';
     .date-item div {
         font-size: 14px;
         font-weight: 600;
-        color: #0f172a;
+        color: var(--y-metin);
     }
 
     /* Table */
@@ -203,7 +203,7 @@ include 'includes/header.php';
         width: 100%;
         border-collapse: collapse;
         margin: 30px 0;
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 12px;
         overflow: hidden;
     }
@@ -213,19 +213,19 @@ include 'includes/header.php';
         padding: 15px 20px;
         font-size: 11px;
         text-transform: uppercase;
-        color: #64748b;
+        color: var(--y-metin-3);
         font-weight: 700;
-        background: white;
+        background: var(--y-yuzey);
         border-bottom: 2px solid #3b82f6;
         letter-spacing: 0.5px;
     }
 
     .items-table td {
         padding: 20px;
-        border-bottom: 1px solid #f1f5f9;
-        color: #0f172a;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+        color: var(--y-metin);
         font-size: 14px;
-        background: white;
+        background: var(--y-yuzey);
     }
 
     .items-table tbody tr:last-child td {
@@ -251,10 +251,10 @@ include 'includes/header.php';
 
     .totals-box {
         width: 320px;
-        background: white;
+        background: var(--y-yuzey);
         padding: 25px;
         border-radius: 12px;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--y-cizgi);
     }
 
     .total-row {
@@ -262,7 +262,7 @@ include 'includes/header.php';
         justify-content: space-between;
         margin-bottom: 12px;
         font-size: 14px;
-        color: #64748b;
+        color: var(--y-metin-3);
         font-weight: 500;
     }
 
@@ -270,14 +270,14 @@ include 'includes/header.php';
         margin-top: 15px;
         padding-top: 15px;
         border-top: 2px solid #3b82f6;
-        color: #0f172a;
+        color: var(--y-metin);
         font-weight: 800;
         font-size: 20px;
     }
 
     /* Sidebar */
     .action-box {
-        background: white;
+        background: var(--y-yuzey);
         border-radius: 16px;
         padding: 25px;
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
@@ -325,7 +325,7 @@ include 'includes/header.php';
     }
 
     .btn-default-action {
-        background: white;
+        background: var(--y-yuzey);
         border-color: var(--invoice-border);
         color: var(--invoice-text);
     }
@@ -353,8 +353,8 @@ include 'includes/header.php';
     }
 
     .st-Draft {
-        background: #f1f5f9;
-        color: #64748b;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-3);
     }
 
     .st-Sent {
@@ -380,7 +380,7 @@ include 'includes/header.php';
 
     @media print {
         body {
-            background: white !important;
+            background: var(--y-yuzey) !important;
         }
 
         .sidebar,

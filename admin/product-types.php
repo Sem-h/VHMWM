@@ -150,7 +150,7 @@ include 'includes/header.php';
     }
 
     .type-card {
-        background: white;
+        background: var(--y-yuzey);
         border: 1px solid var(--border);
         border-radius: 16px;
         padding: 24px;
@@ -203,7 +203,7 @@ include 'includes/header.php';
         font-size: 13px;
         color: var(--gray);
         font-family: monospace;
-        background: #f1f5f9;
+        background: var(--y-yuzey-2);
         padding: 2px 8px;
         border-radius: 4px;
     }
@@ -274,13 +274,13 @@ include 'includes/header.php';
     }
 
     .modal-content {
-        background: white;
+        background: var(--y-yuzey);
         max-width: 520px;
         border-radius: 16px;
     }
 
     .modal-header {
-        background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
         border-radius: 16px 16px 0 0;
     }
 
@@ -309,7 +309,7 @@ include 'includes/header.php';
         max-height: 200px;
         overflow-y: auto;
         padding: 10px;
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border-radius: 10px;
         margin-top: 10px;
     }
@@ -328,7 +328,7 @@ include 'includes/header.php';
 
     .icon-item:hover,
     .icon-item.selected {
-        background: white;
+        background: var(--y-yuzey);
         border-color: var(--primary);
         color: var(--primary);
     }
@@ -341,7 +341,7 @@ include 'includes/header.php';
         max-height: 150px;
         overflow-y: auto;
         padding: 10px;
-        background: #f8fafc;
+        background: var(--y-yuzey-2);
         border-radius: 10px;
         margin-top: 10px;
     }
@@ -361,7 +361,7 @@ include 'includes/header.php';
 
     .emoji-item:hover,
     .emoji-item.selected {
-        background: white;
+        background: var(--y-yuzey);
         border-color: var(--primary);
     }
 

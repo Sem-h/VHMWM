@@ -493,7 +493,7 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     padding: 24px;
     display: flex;
@@ -539,7 +539,7 @@ include 'includes/header.php';
 
 /* Tabs */
 .tabs-container {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     border: 1px solid var(--border);
@@ -548,7 +548,7 @@ include 'includes/header.php';
 
 .tabs-header {
     display: flex;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-bottom: 1px solid var(--border);
     padding: 0 20px;
 }
@@ -603,7 +603,7 @@ include 'includes/header.php';
 /* Filter Bar */
 .filter-bar {
     padding: 20px 25px;
-    background: #fafbfc;
+    background: var(--y-yuzey-2);
     border-bottom: 1px solid var(--border);
     display: flex;
     gap: 15px;
@@ -660,7 +660,7 @@ include 'includes/header.php';
 
 .btn-clear {
     padding: 10px 16px;
-    background: white;
+    background: var(--y-yuzey);
     color: var(--gray);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -688,20 +688,20 @@ include 'includes/header.php';
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--gray);
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-bottom: 1px solid var(--border);
 }
 
 .logs-table td {
     padding: 16px 20px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--y-cizgi-soft);
     font-size: 14px;
     color: var(--dark);
     vertical-align: middle;
 }
 
 .logs-table tr:hover td {
-    background: #fafbfc;
+    background: var(--y-yuzey-2);
 }
 
 .logs-table tr:last-child td {
@@ -807,7 +807,7 @@ include 'includes/header.php';
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-radius: 8px;
     font-size: 13px;
     font-weight: 500;
@@ -824,7 +824,7 @@ include 'includes/header.php';
 .integration-icon {
     width: 36px;
     height: 36px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-radius: 10px;
     display: flex;
     align-items: center;
@@ -846,7 +846,7 @@ include 'includes/header.php';
 /* View Button */
 .btn-view {
     padding: 8px 14px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     color: var(--dark);
     border: none;
     border-radius: 8px;
@@ -892,12 +892,12 @@ include 'includes/header.php';
     border: 1px solid #fecaca;
     border-radius: 6px;
     font-size: 13px;
-    background: white;
+    background: var(--y-yuzey);
 }
 
 .btn-danger-outline {
     padding: 8px 16px;
-    background: white;
+    background: var(--y-yuzey);
     color: #dc2626;
     border: 1px solid #dc2626;
     border-radius: 6px;
@@ -921,7 +921,7 @@ include 'includes/header.php';
 .empty-icon {
     width: 100px;
     height: 100px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -967,7 +967,7 @@ include 'includes/header.php';
     font-weight: 500;
     text-decoration: none;
     color: var(--dark);
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     transition: all 0.2s;
 }
@@ -1033,7 +1033,7 @@ include 'includes/header.php';
 }
 
 .log-modal-content {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     width: 100%;
     max-width: 700px;
@@ -1084,7 +1084,7 @@ include 'includes/header.php';
 }
 
 .log-content-box {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 16px;

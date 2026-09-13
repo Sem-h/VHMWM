@@ -93,7 +93,7 @@ include 'includes/header.php';
     left: 60px;
     right: 60px;
     height: 3px;
-    background: #e2e8f0;
+    background: var(--y-cizgi);
     z-index: 0;
 }
 
@@ -121,14 +121,14 @@ include 'includes/header.php';
     width: 50px;
     height: 50px;
     border-radius: 50%;
-    background: #fff;
-    border: 3px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border: 3px solid var(--y-cizgi);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 18px;
     font-weight: 700;
-    color: #94a3b8;
+    color: var(--y-metin-3);
     transition: all 0.3s;
     margin-bottom: 10px;
 }
@@ -149,19 +149,19 @@ include 'includes/header.php';
 .wizard-step .step-label {
     font-size: 13px;
     font-weight: 600;
-    color: #94a3b8;
+    color: var(--y-metin-3);
     text-align: center;
     transition: color 0.3s;
 }
 
 .wizard-step.active .step-label,
 .wizard-step.completed .step-label {
-    color: #1e293b;
+    color: var(--y-metin);
 }
 
 /* Step Content */
 .wizard-content {
-    background: #fff;
+    background: var(--y-yuzey);
     border-radius: 24px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.08);
     overflow: hidden;
@@ -207,12 +207,12 @@ include 'includes/header.php';
 .step-header h2 {
     font-size: 26px;
     font-weight: 800;
-    color: #1e293b;
+    color: var(--y-metin);
     margin: 0 0 8px 0;
 }
 
 .step-header p {
-    color: #64748b;
+    color: var(--y-metin-3);
     font-size: 15px;
     margin: 0;
 }
@@ -226,7 +226,7 @@ include 'includes/header.php';
     display: block;
     font-size: 14px;
     font-weight: 700;
-    color: #334155;
+    color: var(--y-metin-2);
     margin-bottom: 10px;
 }
 
@@ -237,11 +237,11 @@ include 'includes/header.php';
 .form-control {
     width: 100%;
     padding: 16px 20px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 14px;
     font-size: 16px;
     transition: all 0.3s;
-    background: #fff;
+    background: var(--y-yuzey);
 }
 
 .form-control:focus {
@@ -251,7 +251,7 @@ include 'includes/header.php';
 }
 
 .form-control::placeholder {
-    color: #94a3b8;
+    color: var(--y-metin-3);
 }
 
 textarea.form-control {
@@ -281,7 +281,7 @@ textarea.form-control {
     align-items: center;
     text-align: center;
     padding: 25px 15px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border: 3px solid transparent;
     border-radius: 18px;
     cursor: pointer;
@@ -289,7 +289,7 @@ textarea.form-control {
 }
 
 .group-card label:hover {
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     transform: translateY(-3px);
 }
 
@@ -321,12 +321,12 @@ textarea.form-control {
 .group-card .group-icon.dedicated { background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #6d28d9; }
 .group-card .group-icon.domain { background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0369a1; }
 .group-card .group-icon.ssl { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; }
-.group-card .group-icon.other { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); color: #475569; }
+.group-card .group-icon.other { background: linear-gradient(135deg, var(--y-yuzey-2), var(--y-cizgi)); color: var(--y-metin-2); }
 
 .group-card .group-name {
     font-size: 15px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--y-metin);
 }
 
 /* Price Cards */
@@ -341,8 +341,8 @@ textarea.form-control {
 }
 
 .price-card {
-    background: #f8fafc;
-    border: 2px solid #e2e8f0;
+    background: var(--y-yuzey-2);
+    border: 2px solid var(--y-cizgi);
     border-radius: 16px;
     padding: 20px;
     transition: all 0.3s;
@@ -363,7 +363,7 @@ textarea.form-control {
     gap: 10px;
     font-size: 14px;
     font-weight: 600;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin-bottom: 12px;
 }
 
@@ -383,11 +383,11 @@ textarea.form-control {
 .price-input input {
     width: 100%;
     padding: 14px 50px 14px 18px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 12px;
     font-size: 18px;
     font-weight: 700;
-    background: #fff;
+    background: var(--y-yuzey);
     transition: all 0.3s;
 }
 
@@ -403,7 +403,7 @@ textarea.form-control {
     transform: translateY(-50%);
     font-size: 18px;
     font-weight: 800;
-    color: #94a3b8;
+    color: var(--y-metin-3);
 }
 
 /* Toggle Switch */
@@ -428,7 +428,7 @@ textarea.form-control {
     align-items: center;
     text-align: center;
     padding: 35px 25px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border: 3px solid transparent;
     border-radius: 20px;
     cursor: pointer;
@@ -436,7 +436,7 @@ textarea.form-control {
 }
 
 .status-card label:hover {
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
 }
 
 .status-card input:checked + label {
@@ -478,13 +478,13 @@ textarea.form-control {
 .status-card h4 {
     font-size: 18px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--y-metin);
     margin: 0 0 6px 0;
 }
 
 .status-card p {
     font-size: 13px;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin: 0;
 }
 
@@ -510,7 +510,7 @@ textarea.form-control {
 }
 
 .summary-header span {
-    color: #94a3b8;
+    color: var(--y-metin-3);
     font-size: 14px;
 }
 
@@ -533,7 +533,7 @@ textarea.form-control {
 }
 
 .summary-price .period {
-    color: #94a3b8;
+    color: var(--y-metin-3);
     font-size: 14px;
 }
 
@@ -545,7 +545,7 @@ textarea.form-control {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 1px;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin: 0 0 15px 0;
 }
 
@@ -595,8 +595,8 @@ textarea.form-control {
     display: flex;
     justify-content: space-between;
     padding: 25px 40px;
-    background: #f8fafc;
-    border-top: 1px solid #e2e8f0;
+    background: var(--y-yuzey-2);
+    border-top: 1px solid var(--y-cizgi);
 }
 
 .wizard-nav .btn {
@@ -613,13 +613,13 @@ textarea.form-control {
 }
 
 .wizard-nav .btn-back {
-    background: #fff;
-    border: 2px solid #e2e8f0;
-    color: #64748b;
+    background: var(--y-yuzey);
+    border: 2px solid var(--y-cizgi);
+    color: var(--y-metin-3);
 }
 
 .wizard-nav .btn-back:hover {
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-color: #cbd5e1;
 }
 
@@ -699,7 +699,7 @@ textarea.form-control {
     align-items: center;
     text-align: center;
     padding: 25px 20px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border: 3px solid transparent;
     border-radius: 16px;
     cursor: pointer;
@@ -707,7 +707,7 @@ textarea.form-control {
 }
 
 .domain-card label:hover {
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
 }
 
 .domain-card input:checked + label {
@@ -744,13 +744,13 @@ textarea.form-control {
 .domain-card h4 {
     font-size: 16px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--y-metin);
     margin: 0 0 5px 0;
 }
 
 .domain-card p {
     font-size: 12px;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin: 0;
 }
 

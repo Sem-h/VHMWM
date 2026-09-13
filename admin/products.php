@@ -103,7 +103,7 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 24px;
@@ -167,7 +167,7 @@ include 'includes/header.php';
     padding: 10px 18px;
     border-radius: 10px;
     border: 1px solid var(--border);
-    background: white;
+    background: var(--y-yuzey);
     color: var(--gray);
     font-size: 13px;
     font-weight: 600;
@@ -231,7 +231,7 @@ include 'includes/header.php';
 .view-toggle {
     display: flex;
     gap: 5px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     padding: 4px;
     border-radius: 8px;
 }
@@ -247,7 +247,7 @@ include 'includes/header.php';
 }
 
 .view-btn.active {
-    background: white;
+    background: var(--y-yuzey);
     color: var(--primary);
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
@@ -260,7 +260,7 @@ include 'includes/header.php';
 }
 
 .product-card {
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 16px;
     overflow: hidden;
@@ -275,7 +275,7 @@ include 'includes/header.php';
 
 .product-card-header {
     padding: 20px;
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey-2) 100%);
     border-bottom: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
@@ -336,7 +336,7 @@ include 'includes/header.php';
     flex: 1;
     text-align: center;
     padding: 12px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-radius: 10px;
 }
 
@@ -393,7 +393,7 @@ include 'includes/header.php';
 }
 
 .table-enhanced thead th {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     padding: 14px 16px;
     font-size: 12px;
     font-weight: 700;
@@ -409,7 +409,7 @@ include 'includes/header.php';
 }
 
 .table-enhanced tbody tr:hover {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
 }
 
 .table-enhanced tbody td {
@@ -467,14 +467,14 @@ include 'includes/header.php';
 .modal.show { display: flex; }
 
 .modal-content {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     max-width: 550px;
     width: 100%;
 }
 
 .modal-header {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey-2) 100%);
     padding: 20px 25px;
     border-radius: 16px 16px 0 0;
     border-bottom: 1px solid var(--border);
@@ -501,7 +501,7 @@ include 'includes/header.php';
 
 .modal-footer {
     padding: 20px 25px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-radius: 0 0 16px 16px;
     display: flex;
     justify-content: flex-end;

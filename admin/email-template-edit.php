@@ -105,7 +105,7 @@ include 'includes/header.php';
 
 /* Main Editor */
 .editor-section {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     overflow: hidden;
@@ -116,7 +116,7 @@ include 'includes/header.php';
     align-items: center;
     gap: 15px;
     padding: 20px 25px;
-    background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+    background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
     border-bottom: 1px solid var(--border);
 }
 
@@ -168,8 +168,8 @@ include 'includes/header.php';
 .form-control {
     width: 100%;
     padding: 14px 18px;
-    background: #f8fafc;
-    border: 2px solid #e2e8f0;
+    background: var(--y-yuzey-2);
+    border: 2px solid var(--y-cizgi);
     border-radius: 12px;
     color: var(--dark);
     font-size: 14px;
@@ -180,7 +180,7 @@ include 'includes/header.php';
 .form-control:focus {
     outline: none;
     border-color: var(--primary);
-    background: white;
+    background: var(--y-yuzey);
     box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
 }
 
@@ -205,13 +205,13 @@ textarea.form-control {
 .form-hint {
     display: block;
     margin-top: 8px;
-    color: #64748b;
+    color: var(--y-metin-3);
     font-size: 12px;
 }
 
 /* Sidebar */
 .sidebar-section {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     margin-bottom: 20px;
@@ -220,7 +220,7 @@ textarea.form-control {
 
 .sidebar-header {
     padding: 18px 20px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-bottom: 1px solid var(--border);
     font-weight: 600;
     font-size: 14px;
@@ -248,7 +248,7 @@ textarea.form-control {
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s;
@@ -268,7 +268,7 @@ textarea.form-control {
 }
 
 .variable-item .copy-icon {
-    color: #94a3b8;
+    color: var(--y-metin-3);
     font-size: 12px;
 }
 
@@ -280,12 +280,12 @@ textarea.form-control {
 .global-vars {
     margin-top: 15px;
     padding-top: 15px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--y-cizgi);
 }
 
 .global-vars h5 {
     font-size: 12px;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin-bottom: 10px;
     text-transform: uppercase;
 }
@@ -318,8 +318,8 @@ textarea.form-control {
 }
 
 .btn-outline {
-    background: white;
-    border: 2px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border: 2px solid var(--y-cizgi);
     color: var(--dark);
 }
 
@@ -329,12 +329,12 @@ textarea.form-control {
 }
 
 .btn-secondary {
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     color: var(--dark);
 }
 
 .btn-secondary:hover {
-    background: #e2e8f0;
+    background: var(--y-cizgi);
 }
 
 .btn-lg {
@@ -348,7 +348,7 @@ textarea.form-control {
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    background: white;
+    background: var(--y-yuzey);
     border: 1px solid var(--border);
     border-radius: 10px;
     color: var(--dark);
@@ -401,7 +401,7 @@ textarea.form-control {
 }
 
 .meta-item .label {
-    color: #64748b;
+    color: var(--y-metin-3);
 }
 
 .meta-item .value {
@@ -412,7 +412,7 @@ textarea.form-control {
 .meta-item .value code {
     font-family: 'SF Mono', monospace;
     font-size: 11px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     padding: 2px 6px;
     border-radius: 4px;
 }
@@ -428,7 +428,7 @@ textarea.form-control {
     display: flex;
     gap: 12px;
     padding: 20px 25px;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-top: 1px solid var(--border);
 }
 
@@ -458,8 +458,8 @@ textarea.form-control {
 
 .code-btn {
     padding: 8px 14px;
-    background: #f1f5f9;
-    border: 1px solid #e2e8f0;
+    background: var(--y-yuzey-2);
+    border: 1px solid var(--y-cizgi);
     border-radius: 8px;
     font-size: 12px;
     font-weight: 500;
@@ -471,7 +471,7 @@ textarea.form-control {
 }
 
 .code-btn:hover {
-    background: #e2e8f0;
+    background: var(--y-cizgi);
     border-color: #cbd5e1;
 }
 </style>

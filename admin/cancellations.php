@@ -112,7 +112,7 @@ include 'includes/header.php';
 }
 
 .stat-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     padding: 25px;
     display: flex;
@@ -159,12 +159,12 @@ include 'includes/header.php';
     font-weight: 600;
     font-size: 14px;
     transition: all 0.2s;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     color: var(--dark);
 }
 
 .filter-tab:hover {
-    background: #e2e8f0;
+    background: var(--y-cizgi);
 }
 
 .filter-tab.active {
@@ -173,7 +173,7 @@ include 'includes/header.php';
 }
 
 .request-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     margin-bottom: 15px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -282,19 +282,19 @@ include 'includes/header.php';
 }
 
 .request-reason {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     padding: 15px;
     border-radius: 10px;
     font-size: 14px;
     line-height: 1.7;
-    color: #374151;
+    color: var(--y-metin-2);
     margin-top: 20px;
 }
 
 .request-actions {
     padding: 20px 25px;
     border-top: 1px solid var(--border);
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
 }
 
 .action-form {
@@ -367,7 +367,7 @@ include 'includes/header.php';
 }
 
 .btn-outline {
-    background: white;
+    background: var(--y-yuzey);
     color: var(--dark);
     border: 1px solid var(--border);
 }
@@ -382,7 +382,7 @@ include 'includes/header.php';
     align-items: center;
     gap: 15px;
     padding: 15px;
-    background: #f1f5f9;
+    background: var(--y-yuzey-2);
     border-radius: 10px;
 }
 

@@ -608,17 +608,17 @@ include 'includes/header.php';
 }
 
 .config-card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--y-cizgi);
     overflow: hidden;
     height: fit-content;
 }
 
 .config-card-header {
-    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    background: linear-gradient(135deg, var(--y-yuzey-2), var(--y-yuzey-2));
     padding: 20px 25px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--y-cizgi);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -637,7 +637,7 @@ include 'includes/header.php';
 
 .config-card-header h3 {
     font-size: 16px;
-    color: #1e293b;
+    color: var(--y-metin);
 }
 
 .config-card-body {
@@ -651,7 +651,7 @@ include 'includes/header.php';
 .form-group label {
     display: block;
     font-weight: 600;
-    color: #475569;
+    color: var(--y-metin-2);
     margin-bottom: 8px;
     font-size: 14px;
 }
@@ -659,7 +659,7 @@ include 'includes/header.php';
 .form-control {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid #e2e8f0;
+    border: 2px solid var(--y-cizgi);
     border-radius: 10px;
     font-size: 14px;
     transition: all 0.3s;
@@ -706,8 +706,8 @@ include 'includes/header.php';
 }
 
 .import-card {
-    background: white;
-    border: 2px solid #e2e8f0;
+    background: var(--y-yuzey);
+    border: 2px solid var(--y-cizgi);
     border-radius: 16px;
     padding: 25px;
     transition: all 0.3s;
@@ -741,13 +741,13 @@ include 'includes/header.php';
 
 .import-card h4 {
     font-size: 18px;
-    color: #1e293b;
+    color: var(--y-metin);
     margin-bottom: 8px;
 }
 
 .import-card p {
     font-size: 13px;
-    color: #64748b;
+    color: var(--y-metin-3);
     margin-bottom: 20px;
     line-height: 1.6;
 }
@@ -755,9 +755,9 @@ include 'includes/header.php';
 .import-card .btn-import {
     width: 100%;
     padding: 12px 20px;
-    border: 2px solid #e2e8f0;
-    background: #f8fafc;
-    color: #475569;
+    border: 2px solid var(--y-cizgi);
+    background: var(--y-yuzey-2);
+    color: var(--y-metin-2);
     border-radius: 10px;
     font-size: 14px;
     font-weight: 600;
@@ -818,8 +818,8 @@ include 'includes/header.php';
 }
 
 .results-box {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: var(--y-yuzey-2);
+    border: 1px solid var(--y-cizgi);
     border-radius: 12px;
     padding: 20px;
     margin-top: 15px;
@@ -827,7 +827,7 @@ include 'includes/header.php';
 
 .results-box h5 {
     font-size: 14px;
-    color: #1e293b;
+    color: var(--y-metin);
     margin-bottom: 15px;
 }
 

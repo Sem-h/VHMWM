@@ -114,7 +114,7 @@ include 'includes/header.php';
     }
 
     .stat-card {
-        background: linear-gradient(135deg, #fff 0%, #f8fafc 100%);
+        background: linear-gradient(135deg, var(--y-yuzey) 0%, var(--y-yuzey-2) 100%);
         border: 1px solid var(--border);
         border-radius: 16px;
         padding: 24px;
@@ -170,7 +170,7 @@ include 'includes/header.php';
 
     /* Type Section */
     .type-section {
-        background: #fff;
+        background: var(--y-yuzey);
         border: 1px solid var(--border);
         border-radius: 16px;
         margin-bottom: 24px;
@@ -183,7 +183,7 @@ include 'includes/header.php';
         align-items: center;
         gap: 16px;
         padding: 20px 24px;
-        background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
         border-bottom: 1px solid var(--border);
         position: relative;
     }
@@ -255,7 +255,7 @@ include 'includes/header.php';
         display: flex;
         align-items: center;
         padding: 18px 24px;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         transition: all 0.2s;
     }
 
@@ -264,7 +264,7 @@ include 'includes/header.php';
     }
 
     .group-row:hover {
-        background: linear-gradient(90deg, #f8fafc 0%, #fff 100%);
+        background: linear-gradient(90deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
     }
 
     .group-main {
@@ -323,11 +323,11 @@ include 'includes/header.php';
     }
 
     .meta-item code {
-        background: #e2e8f0;
+        background: var(--y-cizgi);
         padding: 3px 10px;
         border-radius: 6px;
         font-size: 12px;
-        color: #475569;
+        color: var(--y-metin-2);
     }
 
     .group-stats {
@@ -386,13 +386,13 @@ include 'includes/header.php';
     .btn-icon {
         width: 40px;
         height: 40px;
-        border: 1px solid #e2e8f0;
-        background: white;
+        border: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey);
         border-radius: 10px;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #64748b;
+        color: var(--y-metin-3);
         cursor: pointer;
         transition: all 0.2s;
         font-size: 14px;
@@ -435,7 +435,7 @@ include 'includes/header.php';
     .empty-state {
         text-align: center;
         padding: 80px 20px;
-        background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
         border: 2px dashed #cbd5e1;
         border-radius: 16px;
     }
@@ -464,13 +464,13 @@ include 'includes/header.php';
     }
 
     .modal-content {
-        background: white;
+        background: var(--y-yuzey);
         max-width: 520px;
         border-radius: 16px;
     }
 
     .modal-header {
-        background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+        background: linear-gradient(135deg, var(--y-yuzey-2) 0%, var(--y-yuzey) 100%);
         border-radius: 16px 16px 0 0;
     }
 

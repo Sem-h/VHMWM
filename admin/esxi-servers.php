@@ -266,7 +266,7 @@ include 'includes/header.php';
 }
 
 .stat-box {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
     padding: 24px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -302,7 +302,7 @@ include 'includes/header.php';
 
 /* Card */
 .card {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     margin-bottom: 20px;
@@ -341,18 +341,18 @@ include 'includes/header.php';
     font-weight: 600;
     color: var(--gray);
     text-transform: uppercase;
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border-bottom: 1px solid var(--border);
 }
 
 .data-table td {
     padding: 16px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--y-cizgi-soft);
     font-size: 14px;
 }
 
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #fafbfc; }
+.data-table tr:hover td { background: var(--y-yuzey-2); }
 
 /* Buttons */
 .btn {
@@ -393,7 +393,7 @@ include 'includes/header.php';
 .badge-success { background: #d1fae5; color: #059669; }
 .badge-danger { background: #fee2e2; color: #dc2626; }
 .badge-warning { background: #fef3c7; color: #d97706; }
-.badge-gray { background: #f1f5f9; color: #64748b; }
+.badge-gray { background: var(--y-yuzey-2); color: var(--y-metin-3); }
 
 /* Alert */
 .alert {
@@ -422,7 +422,7 @@ include 'includes/header.php';
 .modal.active { display: flex; }
 
 .modal-content {
-    background: white;
+    background: var(--y-yuzey);
     border-radius: 16px;
     width: 100%;
     max-width: 600px;
@@ -544,7 +544,7 @@ include 'includes/header.php';
 
 /* SSH Info Box */
 .info-box {
-    background: #f8fafc;
+    background: var(--y-yuzey-2);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 15px;
@@ -566,7 +566,7 @@ include 'includes/header.php';
 }
 
 .info-box code {
-    background: #e2e8f0;
+    background: var(--y-cizgi);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 12px;

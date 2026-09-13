@@ -174,8 +174,8 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .hb-kart {
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        background: var(--y-yuzey);
+        border: 1px solid var(--y-cizgi);
         border-radius: 10px;
         overflow: hidden;
         margin-bottom: 20px;
@@ -183,22 +183,22 @@ require_once __DIR__ . '/includes/header.php';
 
     .hb-kart-bas {
         padding: 14px 16px;
-        border-bottom: 1px solid #f1f3f5;
-        background: #f9fafb;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+        background: var(--y-yuzey-2);
     }
 
     .hb-kart-bas h3 {
         margin: 0;
         font-size: 14px;
         font-weight: 800;
-        color: #111827;
+        color: var(--y-metin);
     }
 
     .hb-kart-bas p {
         margin: 4px 0 0;
         font-size: 12px;
         line-height: 1.6;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .hb-kart-govde {
@@ -215,7 +215,7 @@ require_once __DIR__ . '/includes/header.php';
     .hb-tablo td {
         padding: 10px 12px;
         text-align: left;
-        border-bottom: 1px solid #f1f3f5;
+        border-bottom: 1px solid var(--y-cizgi-soft);
         vertical-align: middle;
     }
 
@@ -223,8 +223,8 @@ require_once __DIR__ . '/includes/header.php';
         font-size: 11px;
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: #6b7280;
-        background: #f9fafb;
+        color: var(--y-metin-3);
+        background: var(--y-yuzey-2);
     }
 
     .hb-tablo tr:last-child td {
@@ -247,8 +247,8 @@ require_once __DIR__ . '/includes/header.php';
         border-radius: 999px;
         font-size: 11px;
         font-weight: 700;
-        background: #f3f4f6;
-        color: #6b7280;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-3);
     }
 
     .hb-rozet.dolu {
@@ -279,18 +279,18 @@ require_once __DIR__ . '/includes/header.php';
         font-weight: 700;
         letter-spacing: 0.03em;
         text-transform: uppercase;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .hb-alan input,
     .hb-alan select,
     .hb-alan textarea {
         padding: 8px 10px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--y-cizgi);
         border-radius: 6px;
         font-family: inherit;
         font-size: 13px;
-        color: #111827;
+        color: var(--y-metin);
     }
 
     .hb-alan textarea {
@@ -319,8 +319,8 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .hb-dugme.ikincil {
-        background: #f3f4f6;
-        color: #374151;
+        background: var(--y-yuzey-2);
+        color: var(--y-metin-2);
     }
 
     .hb-dugme.tehlike {
@@ -345,7 +345,7 @@ require_once __DIR__ . '/includes/header.php';
         margin-bottom: 12px;
         font-size: 12px;
         line-height: 1.6;
-        color: #374151;
+        color: var(--y-metin-2);
         cursor: pointer;
     }
 
@@ -357,18 +357,18 @@ require_once __DIR__ . '/includes/header.php';
     .hb-sayac {
         margin-left: 10px;
         font-size: 12px;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .hb-ipucu {
         margin: 12px 0 0;
         font-size: 12px;
         line-height: 1.7;
-        color: #6b7280;
+        color: var(--y-metin-3);
     }
 
     .hb-ipucu code {
-        background: #f3f4f6;
+        background: var(--y-yuzey-2);
         padding: 1px 5px;
         border-radius: 4px;
     }
