@@ -1,11 +1,24 @@
 <?php
 /**
- * WHMVM - Yapılandırılabilir Seçenekler
+ * VHM - Yapılandırılabilir seçenekler
+ *
+ * Buradaki fiyatlar sepete ve ödemeye giriyor (includes/Sepet.php).
+ * Önceki sürümde hiçbir fiyat doğrulanmıyordu: (float)$_POST[...] harf
+ * girilince sessizce 0 oluyor, eksi değer kabul ediliyordu.
+ *
+ * Sayfa ayrıca her açılışta install/config_options_tables.sql dosyasını
+ * baştan sona çalıştırıyordu; dört tablo da kurulum şemasında zaten var.
+ *
+ * Grup silinirken içindeki seçeneklere ve o gruba bağlı ürünlere
+ * bakılmıyordu; bağlı ürünün sepetteki ek seçenekleri sessizce kayboluyordu.
  */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+require_once dirname(__DIR__) . '/includes/Katalog.php';
 Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['admin_id'])) {
@@ -13,1137 +26,905 @@ if (!isset($_SESSION['admin_id'])) {
     exit;
 }
 
-$pageTitle = 'Yapılandırılabilir Seçenekler';
-$currentPage = 'config-options';
-$db = Database::getInstance();
+/** config_options.option_type için kabul edilen değerler */
+const SC_TURLER = [
+    'dropdown' => 'Açılır liste',
+    'radio' => 'Tek seçim',
+    'checkbox' => 'Onay kutusu',
+    'quantity' => 'Adet',
+    'text' => 'Serbest metin',
+];
 
-// Tabloları oluştur
-function ensureConfigTables() {
-    $sqlFile = dirname(__DIR__) . '/install/config_options_tables.sql';
-    if (file_exists($sqlFile)) {
-        $sql = file_get_contents($sqlFile);
-        $statements = array_filter(array_map('trim', explode(';', $sql)));
-        foreach ($statements as $statement) {
-            if (!empty($statement)) {
-                try {
-                    Database::query($statement);
-                } catch (Exception $e) {}
-            }
-        }
-    }
-}
-ensureConfigTables();
-
-$message = '';
-$messageType = 'success';
-
-// İşlemler
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-    
-    // Grup Ekle
-    if ($action === 'add_group') {
-        $name = trim($_POST['group_name'] ?? '');
-        $desc = trim($_POST['group_desc'] ?? '');
-        if ($name) {
-            Database::query("INSERT INTO config_option_groups (name, description) VALUES (?, ?)", [$name, $desc]);
-            $message = 'Grup oluşturuldu!';
-        }
-    }
-    
-    // Grup Güncelle
-    if ($action === 'update_group') {
-        $id = (int)$_POST['group_id'];
-        $name = trim($_POST['group_name'] ?? '');
-        $desc = trim($_POST['group_desc'] ?? '');
-        if ($name && $id) {
-            Database::query("UPDATE config_option_groups SET name = ?, description = ? WHERE id = ?", [$name, $desc, $id]);
-            $message = 'Grup güncellendi!';
-        }
-    }
-    
-    // Grup Sil
-    if ($action === 'delete_group') {
-        $id = (int)$_POST['group_id'];
-        Database::query("DELETE FROM config_option_groups WHERE id = ?", [$id]);
-        $message = 'Grup silindi!';
-    }
-    
-    // Seçenek Ekle
-    if ($action === 'add_option') {
-        $groupId = (int)$_POST['group_id'];
-        $name = trim($_POST['option_name'] ?? '');
-        $type = $_POST['option_type'] ?? 'dropdown';
-        $required = isset($_POST['required']) ? 1 : 0;
-        if ($name && $groupId) {
-            Database::query(
-                "INSERT INTO config_options (group_id, name, option_type, required) VALUES (?, ?, ?, ?)",
-                [$groupId, $name, $type, $required]
-            );
-            $message = 'Seçenek eklendi!';
-        }
-    }
-    
-    // Seçenek Güncelle
-    if ($action === 'update_option') {
-        $id = (int)$_POST['option_id'];
-        $name = trim($_POST['option_name'] ?? '');
-        $type = $_POST['option_type'] ?? 'dropdown';
-        $required = isset($_POST['required']) ? 1 : 0;
-        if ($name && $id) {
-            Database::query(
-                "UPDATE config_options SET name = ?, option_type = ?, required = ? WHERE id = ?",
-                [$name, $type, $required, $id]
-            );
-            $message = 'Seçenek güncellendi!';
-        }
-    }
-    
-    // Seçenek Sil
-    if ($action === 'delete_option') {
-        $id = (int)$_POST['option_id'];
-        Database::query("DELETE FROM config_options WHERE id = ?", [$id]);
-        $message = 'Seçenek silindi!';
-    }
-    
-    // Değer Ekle
-    if ($action === 'add_value') {
-        $optionId = (int)$_POST['option_id'];
-        $name = trim($_POST['value_name'] ?? '');
-        $priceMonthly = (float)($_POST['price_monthly'] ?? 0);
-        $priceAnnually = (float)($_POST['price_annually'] ?? 0);
-        $setup = (float)($_POST['setup_fee'] ?? 0);
-        $isDefault = isset($_POST['is_default']) ? 1 : 0;
-        
-        if ($name && $optionId) {
-            if ($isDefault) {
-                Database::query("UPDATE config_option_values SET is_default = 0 WHERE option_id = ?", [$optionId]);
-            }
-            Database::query(
-                "INSERT INTO config_option_values (option_id, name, price_monthly, price_annually, setup_fee, is_default) VALUES (?, ?, ?, ?, ?, ?)",
-                [$optionId, $name, $priceMonthly, $priceAnnually, $setup, $isDefault]
-            );
-            $message = 'Değer eklendi!';
-        }
-    }
-    
-    // Değer Güncelle
-    if ($action === 'update_value') {
-        $id = (int)$_POST['value_id'];
-        $optionId = (int)$_POST['option_id'];
-        $name = trim($_POST['value_name'] ?? '');
-        $priceMonthly = (float)($_POST['price_monthly'] ?? 0);
-        $priceAnnually = (float)($_POST['price_annually'] ?? 0);
-        $setup = (float)($_POST['setup_fee'] ?? 0);
-        $isDefault = isset($_POST['is_default']) ? 1 : 0;
-        
-        if ($name && $id) {
-            if ($isDefault) {
-                Database::query("UPDATE config_option_values SET is_default = 0 WHERE option_id = ?", [$optionId]);
-            }
-            Database::query(
-                "UPDATE config_option_values SET name = ?, price_monthly = ?, price_annually = ?, setup_fee = ?, is_default = ? WHERE id = ?",
-                [$name, $priceMonthly, $priceAnnually, $setup, $isDefault, $id]
-            );
-            $message = 'Değer güncellendi!';
-        }
-    }
-    
-    // Değer Sil
-    if ($action === 'delete_value') {
-        $id = (int)$_POST['value_id'];
-        Database::query("DELETE FROM config_option_values WHERE id = ?", [$id]);
-        $message = 'Değer silindi!';
-    }
-    
-    // POST-Redirect-GET
-    $_SESSION['config_message'] = $message;
-    $redirectUrl = 'config-options.php';
-    if (isset($_GET['group'])) {
-        $redirectUrl .= '?group=' . $_GET['group'];
-    }
-    header('Location: ' . $redirectUrl);
+function secenekDon(string $tip, string $metin, int $grupId = 0): never
+{
+    $_SESSION['sc_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: config-options.php' . ($grupId > 0 ? '?grup=' . $grupId : ''));
     exit;
 }
 
-// Session'dan mesaj
-if (isset($_SESSION['config_message'])) {
-    $message = $_SESSION['config_message'];
-    unset($_SESSION['config_message']);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    Guvenlik::zorunlu();
+    $islem = (string) ($_POST['islem'] ?? '');
+    $grupId = (int) ($_POST['group_id'] ?? 0);
+
+    /* ---------- Grup ---------- */
+    if ($islem === 'grup_kaydet') {
+        $ad = trim((string) ($_POST['name'] ?? ''));
+        $aciklama = trim((string) ($_POST['description'] ?? ''));
+
+        if ($ad === '') {
+            secenekDon('error', 'Grup adı boş olamaz.', $grupId);
+        }
+        if (mb_strlen($ad) > 255) {
+            secenekDon('error', 'Grup adı çok uzun.', $grupId);
+        }
+
+        if ($grupId > 0) {
+            Database::update('config_option_groups',
+                ['name' => $ad, 'description' => $aciklama], 'id = ?', [$grupId]);
+            secenekDon('success', $ad . ' güncellendi.', $grupId);
+        }
+
+        $yeni = Database::insert('config_option_groups',
+            ['name' => $ad, 'description' => $aciklama]);
+        secenekDon('success', $ad . ' oluşturuldu.', $yeni);
+    }
+
+    if ($islem === 'grup_sil') {
+        $grup = Database::fetch("SELECT name FROM config_option_groups WHERE id = ?", [$grupId]);
+        if (!$grup) {
+            secenekDon('error', 'Grup bulunamadı.');
+        }
+
+        $bagliUrun = (int) Database::fetchColumn(
+            "SELECT COUNT(*) FROM product_config_links WHERE group_id = ?",
+            [$grupId]
+        );
+
+        if ($bagliUrun > 0) {
+            secenekDon(
+                'error',
+                $grup['name'] . ' silinemez: ' . $bagliUrun . ' ürün bu seçenek grubunu kullanıyor. '
+                . 'Önce ürün düzenleme ekranından bağlantıyı kaldırın.'
+            );
+        }
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            Database::query(
+                "DELETE v FROM config_option_values v
+                   JOIN config_options o ON o.id = v.option_id
+                  WHERE o.group_id = ?",
+                [$grupId]
+            );
+            Database::query("DELETE FROM config_options WHERE group_id = ?", [$grupId]);
+            Database::query("DELETE FROM config_option_groups WHERE id = ?", [$grupId]);
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            error_log('Seçenek grubu silinemedi: ' . $e->getMessage());
+            secenekDon('error', 'Grup silinemedi.');
+        }
+
+        secenekDon('success', $grup['name'] . ' ve içindeki seçenekler silindi.');
+    }
+
+    /* ---------- Seçenek ---------- */
+    if ($islem === 'secenek_kaydet') {
+        $secenekId = (int) ($_POST['option_id'] ?? 0);
+        $ad = trim((string) ($_POST['name'] ?? ''));
+        $tur = (string) ($_POST['option_type'] ?? 'dropdown');
+        $zorunlu = isset($_POST['required']) ? 1 : 0;
+        $sira = (int) ($_POST['order_priority'] ?? 0);
+
+        if ($ad === '') {
+            secenekDon('error', 'Seçenek adı boş olamaz.', $grupId);
+        }
+        if (!isset(SC_TURLER[$tur])) {
+            secenekDon('error', 'Geçersiz seçenek türü.', $grupId);
+        }
+        if ($sira < 0 || $sira > 999) {
+            secenekDon('error', 'Sıra 0 ile 999 arasında olmalı.', $grupId);
+        }
+
+        $veri = [
+            'name' => $ad,
+            'option_type' => $tur,
+            'required' => $zorunlu,
+            'order_priority' => $sira,
+        ];
+
+        if ($secenekId > 0) {
+            $mevcut = Database::fetch("SELECT group_id FROM config_options WHERE id = ?", [$secenekId]);
+            if (!$mevcut) {
+                secenekDon('error', 'Seçenek bulunamadı.', $grupId);
+            }
+            Database::update('config_options', $veri, 'id = ?', [$secenekId]);
+            secenekDon('success', $ad . ' güncellendi.', (int) $mevcut['group_id']);
+        }
+
+        if (!Database::fetch("SELECT id FROM config_option_groups WHERE id = ?", [$grupId])) {
+            secenekDon('error', 'Seçenek grubu bulunamadı.');
+        }
+
+        Database::insert('config_options', array_merge(['group_id' => $grupId], $veri));
+        secenekDon('success', $ad . ' eklendi.', $grupId);
+    }
+
+    if ($islem === 'secenek_sil') {
+        $secenekId = (int) ($_POST['option_id'] ?? 0);
+        $secenek = Database::fetch("SELECT name, group_id FROM config_options WHERE id = ?", [$secenekId]);
+
+        if (!$secenek) {
+            secenekDon('error', 'Seçenek bulunamadı.', $grupId);
+        }
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            Database::query("DELETE FROM config_option_values WHERE option_id = ?", [$secenekId]);
+            Database::query("DELETE FROM config_options WHERE id = ?", [$secenekId]);
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            error_log('Seçenek silinemedi: ' . $e->getMessage());
+            secenekDon('error', 'Seçenek silinemedi.', (int) $secenek['group_id']);
+        }
+
+        secenekDon('success', $secenek['name'] . ' silindi.', (int) $secenek['group_id']);
+    }
+
+    /* ---------- Değer ---------- */
+    if ($islem === 'deger_kaydet') {
+        $degerId = (int) ($_POST['value_id'] ?? 0);
+        $secenekId = (int) ($_POST['option_id'] ?? 0);
+        $ad = trim((string) ($_POST['name'] ?? ''));
+        $varsayilan = isset($_POST['is_default']) ? 1 : 0;
+        $sira = (int) ($_POST['order_priority'] ?? 0);
+
+        if ($ad === '') {
+            secenekDon('error', 'Değer adı boş olamaz.', $grupId);
+        }
+
+        $secenek = Database::fetch(
+            "SELECT id, group_id FROM config_options WHERE id = ?",
+            [$secenekId]
+        );
+        if (!$secenek) {
+            secenekDon('error', 'Seçenek bulunamadı.', $grupId);
+        }
+
+        /* Bu fiyatlar doğrudan sepete giriyor; harf veya eksi kabul edilemez */
+        try {
+            $fiyatlar = [];
+            foreach (array_keys(Katalog::DONEM_SUTUNLARI) as $sutun) {
+                if ($sutun === 'price_biennially' || $sutun === 'price_triennially') {
+                    continue; // config_option_values tablosunda bu sütunlar yok
+                }
+                $fiyatlar[$sutun] = Katalog::fiyatOku($_POST[$sutun] ?? '') ?? 0.0;
+            }
+            $fiyatlar['setup_fee'] = Katalog::fiyatOku($_POST['setup_fee'] ?? '') ?? 0.0;
+        } catch (RuntimeException $e) {
+            secenekDon('error', $e->getMessage(), (int) $secenek['group_id']);
+        }
+
+        $veri = array_merge([
+            'name' => $ad,
+            'order_priority' => $sira,
+            'is_default' => $varsayilan,
+        ], $fiyatlar);
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            /* Varsayılan tektir; önce diğerlerini temizle */
+            if ($varsayilan === 1) {
+                Database::query(
+                    "UPDATE config_option_values SET is_default = 0 WHERE option_id = ?",
+                    [$secenekId]
+                );
+            }
+
+            if ($degerId > 0) {
+                Database::update('config_option_values', $veri, 'id = ? AND option_id = ?',
+                    [$degerId, $secenekId]);
+            } else {
+                Database::insert('config_option_values',
+                    array_merge(['option_id' => $secenekId], $veri));
+            }
+
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            error_log('Seçenek değeri kaydedilemedi: ' . $e->getMessage());
+            secenekDon('error', 'Değer kaydedilemedi.', (int) $secenek['group_id']);
+        }
+
+        secenekDon('success', $ad . ' kaydedildi.', (int) $secenek['group_id']);
+    }
+
+    if ($islem === 'deger_sil') {
+        $degerId = (int) ($_POST['value_id'] ?? 0);
+        $deger = Database::fetch(
+            "SELECT v.name, o.group_id
+               FROM config_option_values v
+               JOIN config_options o ON o.id = v.option_id
+              WHERE v.id = ?",
+            [$degerId]
+        );
+
+        if (!$deger) {
+            secenekDon('error', 'Değer bulunamadı.', $grupId);
+        }
+
+        Database::query("DELETE FROM config_option_values WHERE id = ?", [$degerId]);
+        secenekDon('success', $deger['name'] . ' silindi.', (int) $deger['group_id']);
+    }
+
+    secenekDon('error', 'Tanımsız işlem.', $grupId);
 }
 
-// Grupları çek
-$groups = Database::fetchAll("SELECT * FROM config_option_groups ORDER BY name");
+$mesaj = null;
+if (!empty($_SESSION['sc_mesaj'])) {
+    $mesaj = $_SESSION['sc_mesaj'];
+    unset($_SESSION['sc_mesaj']);
+}
 
-// Seçili grup
-$selectedGroupId = isset($_GET['group']) ? (int)$_GET['group'] : ($groups[0]['id'] ?? 0);
-$selectedGroup = null;
-$options = [];
+$gruplar = Database::fetchAll(
+    "SELECT g.*,
+            (SELECT COUNT(*) FROM config_options o WHERE o.group_id = g.id) AS secenek_sayisi,
+            (SELECT COUNT(*) FROM product_config_links l WHERE l.group_id = g.id) AS urun_sayisi
+       FROM config_option_groups g
+      ORDER BY g.name"
+);
 
-if ($selectedGroupId) {
-    $selectedGroup = Database::fetch("SELECT * FROM config_option_groups WHERE id = ?", [$selectedGroupId]);
-    $options = Database::fetchAll("SELECT * FROM config_options WHERE group_id = ? ORDER BY order_priority, name", [$selectedGroupId]);
-    
-    // Her seçeneğin değerlerini al
-    foreach ($options as &$option) {
-        $option['values'] = Database::fetchAll(
-            "SELECT * FROM config_option_values WHERE option_id = ? ORDER BY order_priority, name",
-            [$option['id']]
+$acikGrup = (int) ($_GET['grup'] ?? 0);
+if ($acikGrup === 0 && $gruplar) {
+    $acikGrup = (int) $gruplar[0]['id'];
+}
+
+$grup = null;
+$secenekler = [];
+$bagliUrunler = [];
+
+if ($acikGrup > 0) {
+    $grup = Database::fetch("SELECT * FROM config_option_groups WHERE id = ?", [$acikGrup]);
+
+    if ($grup) {
+        $secenekler = Database::fetchAll(
+            "SELECT * FROM config_options WHERE group_id = ? ORDER BY order_priority, name",
+            [$acikGrup]
+        );
+
+        foreach ($secenekler as $i => $s) {
+            $secenekler[$i]['degerler'] = Database::fetchAll(
+                "SELECT * FROM config_option_values WHERE option_id = ? ORDER BY order_priority, id",
+                [(int) $s['id']]
+            );
+        }
+
+        $bagliUrunler = Database::fetchAll(
+            "SELECT p.id, p.name
+               FROM product_config_links l
+               JOIN products p ON p.id = l.product_id
+              WHERE l.group_id = ?
+              ORDER BY p.name",
+            [$acikGrup]
         );
     }
 }
 
-include 'includes/header.php';
-?>
-
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<style>
-/* Layout */
-.config-layout {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 25px;
-    align-items: start;
-}
-
-@media (max-width: 992px) {
-    .config-layout {
-        grid-template-columns: 1fr;
+$duzenlenenSecenek = null;
+if (!empty($_GET['secenek'])) {
+    foreach ($secenekler as $s) {
+        if ((int) $s['id'] === (int) $_GET['secenek']) {
+            $duzenlenenSecenek = $s;
+            break;
+        }
     }
 }
 
-/* Sidebar */
-.config-sidebar {
-    background: var(--y-yuzey);
-    border-radius: 16px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-    overflow: hidden;
-}
-
-.sidebar-header {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: #fff;
-    padding: 20px;
-}
-
-.sidebar-header h3 {
-    font-size: 16px;
-    font-weight: 700;
-    margin: 0 0 5px 0;
-}
-
-.sidebar-header p {
-    font-size: 13px;
-    opacity: 0.8;
-    margin: 0;
-}
-
-.group-list {
-    padding: 15px;
-}
-
-.group-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 16px;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: all 0.3s;
-    margin-bottom: 8px;
-    text-decoration: none;
-    color: var(--y-metin-2);
-}
-
-.group-item:hover {
-    background: var(--y-yuzey-2);
-}
-
-.group-item.active {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-    color: #6366f1;
-}
-
-.group-item .group-name {
-    font-weight: 600;
-    font-size: 14px;
-}
-
-.group-item .group-count {
-    background: var(--y-cizgi);
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.group-item.active .group-count {
-    background: #6366f1;
-    color: #fff;
-}
-
-.add-group-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 14px;
-    background: var(--y-yuzey-2);
-    border: 2px dashed var(--y-cizgi);
-    border-radius: 12px;
-    color: var(--y-metin-3);
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.add-group-btn:hover {
-    border-color: #6366f1;
-    color: #6366f1;
-    background: rgba(99, 102, 241, 0.05);
-}
-
-/* Main Content */
-.config-main {
-    background: var(--y-yuzey);
-    border-radius: 16px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-    overflow: hidden;
-}
-
-.main-header {
-    padding: 25px;
-    border-bottom: 1px solid var(--y-cizgi);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.main-header h2 {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--y-metin);
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.main-header h2 i {
-    color: #6366f1;
-}
-
-.header-actions {
-    display: flex;
-    gap: 10px;
-}
-
-/* Options */
-.options-list {
-    padding: 20px;
-}
-
-.option-card {
-    background: var(--y-yuzey-2);
-    border: 1px solid var(--y-cizgi);
-    border-radius: 16px;
-    margin-bottom: 20px;
-    overflow: hidden;
-}
-
-.option-header {
-    padding: 18px 20px;
-    background: var(--y-yuzey);
-    border-bottom: 1px solid var(--y-cizgi);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.option-info {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.option-icon {
-    width: 44px;
-    height: 44px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-size: 18px;
-}
-
-.option-details h4 {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--y-metin);
-    margin: 0 0 4px 0;
-}
-
-.option-meta {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 13px;
-    color: var(--y-metin-3);
-}
-
-.option-meta .badge {
-    padding: 3px 10px;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-.badge-dropdown { background: #dbeafe; color: #1d4ed8; }
-.badge-radio { background: #d1fae5; color: #047857; }
-.badge-checkbox { background: #fef3c7; color: #b45309; }
-.badge-quantity { background: #ede9fe; color: #6d28d9; }
-.badge-required { background: #fee2e2; color: #dc2626; }
-
-.option-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.option-actions button {
-    width: 36px;
-    height: 36px;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.3s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.option-actions .btn-edit {
-    background: #dbeafe;
-    color: #1d4ed8;
-}
-
-.option-actions .btn-delete {
-    background: #fee2e2;
-    color: #dc2626;
-}
-
-.option-actions button:hover {
-    transform: scale(1.1);
-}
-
-/* Values Table */
-.values-table {
-    margin: 0;
-}
-
-.values-table table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.values-table th {
-    padding: 12px 16px;
-    text-align: left;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--y-metin-3);
-    text-transform: uppercase;
-    background: var(--y-yuzey-2);
-}
-
-.values-table td {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--y-cizgi);
-    font-size: 14px;
-    color: var(--y-metin-2);
-}
-
-.values-table tr:last-child td {
-    border-bottom: none;
-}
-
-.values-table .value-name {
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.values-table .default-badge {
-    background: #10b981;
-    color: #fff;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 700;
-}
-
-.values-table .price {
-    font-weight: 700;
-    color: #10b981;
-}
-
-.values-table .price.zero {
-    color: var(--y-metin-3);
-}
-
-.add-value-row {
-    padding: 15px 20px;
-    background: var(--y-yuzey);
-    border-top: 1px solid var(--y-cizgi);
-}
-
-.add-value-row button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background: transparent;
-    border: 2px dashed var(--y-cizgi);
-    border-radius: 10px;
-    color: var(--y-metin-3);
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.add-value-row button:hover {
-    border-color: #6366f1;
-    color: #6366f1;
-}
-
-/* Empty State */
-.empty-state {
-    text-align: center;
-    padding: 60px 20px;
-}
-
-.empty-state .empty-icon {
-    width: 100px;
-    height: 100px;
-    background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 25px;
-    font-size: 40px;
-}
-
-.empty-state h3 {
-    font-size: 20px;
-    color: var(--y-metin);
-    margin: 0 0 10px 0;
-}
-
-.empty-state p {
-    color: var(--y-metin-3);
-    margin: 0 0 25px 0;
-}
-
-/* Modal */
-.modal {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.5);
-    backdrop-filter: blur(4px);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-}
-
-.modal.show {
-    display: flex;
-}
-
-.modal-content {
-    background: var(--y-yuzey);
-    border-radius: 20px;
-    width: 100%;
-    max-width: 500px;
-    max-height: 90vh;
-    overflow-y: auto;
-    animation: modalIn 0.3s ease;
-}
-
-@keyframes modalIn {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
-}
-
-.modal-header {
-    padding: 25px;
-    border-bottom: 1px solid var(--y-cizgi);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.modal-header h3 {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--y-metin);
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.modal-header h3 i {
-    color: #6366f1;
-}
-
-.modal-close {
-    width: 36px;
-    height: 36px;
-    border: none;
-    background: var(--y-yuzey-2);
-    border-radius: 10px;
-    cursor: pointer;
-    color: var(--y-metin-3);
-    transition: all 0.3s;
-}
-
-.modal-close:hover {
-    background: var(--y-cizgi);
-}
-
-.modal-body {
-    padding: 25px;
-}
-
-.modal-footer {
-    padding: 20px 25px;
-    background: var(--y-yuzey-2);
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-}
-
-/* Forms */
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-group:last-child {
-    margin-bottom: 0;
-}
-
-.form-group label {
-    display: block;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--y-metin-2);
-    margin-bottom: 8px;
-}
-
-.form-control {
-    width: 100%;
-    padding: 12px 16px;
-    border: 2px solid var(--y-cizgi);
-    border-radius: 12px;
-    font-size: 14px;
-    transition: all 0.3s;
-}
-
-.form-control:focus {
-    border-color: #6366f1;
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-}
-
-.checkbox-label input {
-    width: 18px;
-    height: 18px;
-    accent-color: #6366f1;
-}
-
-/* Buttons */
-.btn {
-    padding: 12px 20px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    border: none;
-}
-
-.btn-primary {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    color: #fff;
-}
-
-.btn-primary:hover {
-    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
-}
-
-.btn-outline {
-    background: var(--y-yuzey);
-    border: 2px solid var(--y-cizgi);
-    color: var(--y-metin-3);
-}
-
-.btn-outline:hover {
-    border-color: #cbd5e1;
-    background: var(--y-yuzey-2);
-}
-
-.btn-danger {
-    background: #ef4444;
-    color: #fff;
-}
-
-.btn-sm {
-    padding: 8px 14px;
-    font-size: 13px;
-}
-
-/* Alert */
-.alert {
-    padding: 16px 20px;
-    border-radius: 12px;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.alert-success {
-    background: #d1fae5;
-    color: #065f46;
-}
+function scPara(mixed $t): string
+{
+    return number_format((float) $t, 2, ',', '.') . ' ₺';
+}
+
+$pageTitle = 'Yapılandırma seçenekleri';
+$currentPage = 'config-options';
+require_once __DIR__ . '/includes/header.php';
+?>
+
+<style>
+    /* ==========================================
+       Yapılandırma seçenekleri - sc
+       ========================================== */
+    .sc-duzen {
+        display: grid;
+        grid-template-columns: 270px minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+    }
+
+    .sc-panel {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
+
+    .sc-panel + .sc-panel {
+        margin-top: 18px;
+    }
+
+    .sc-bas {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .sc-bas h3 {
+        font-size: 12.5px;
+        font-weight: 700;
+    }
+
+    .sc-bas span {
+        font-size: 12px;
+        color: var(--y-metin-3);
+    }
+
+    .sc-govde {
+        padding: 16px;
+    }
+
+    /* Sol: grup listesi */
+    .sc-grup {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 11px 16px;
+        border-bottom: 1px solid var(--y-cizgi-soft);
+        color: var(--y-metin-2);
+        font-size: 13px;
+    }
+
+    .sc-grup:last-of-type {
+        border-bottom: none;
+    }
+
+    .sc-grup:hover {
+        background: var(--y-yuzey-2);
+    }
+
+    .sc-grup.acik {
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-weight: 600;
+    }
+
+    .sc-grup b {
+        display: block;
+        font-weight: inherit;
+    }
+
+    .sc-grup small {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        color: var(--y-metin-3);
+    }
+
+    .sc-yeni-grup {
+        padding: 14px 16px;
+        border-top: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .sc-yeni-grup input {
+        margin-bottom: 8px;
+    }
+
+    .sc-yeni-grup .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* Sağ: seçenekler */
+    .sc-secenek {
+        border-bottom: 1px solid var(--y-cizgi);
+    }
+
+    .sc-secenek:last-child {
+        border-bottom: none;
+    }
+
+    .sc-secenek-bas {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 13px 16px;
+    }
+
+    .sc-secenek-bas b {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .sc-secenek-bas > div {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sc-etiketler {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+    }
+
+    .sc-etiket {
+        padding: 2px 8px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 999px;
+        font-size: 11px;
+        color: var(--y-metin-3);
+    }
+
+    .sc-eylem {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    .sc-eylem form {
+        margin: 0;
+    }
+
+    .sc-dugme {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 7px;
+        background: var(--y-yuzey);
+        color: var(--y-metin-3);
+        font-size: 12px;
+        cursor: pointer;
+        transition: .15s;
+    }
+
+    .sc-dugme:hover {
+        border-color: var(--y-primary);
+        color: var(--y-primary);
+    }
+
+    .sc-dugme.tehlike:hover {
+        border-color: var(--y-danger);
+        color: var(--y-danger);
+    }
+
+    .sc-degerler {
+        padding: 0 16px 14px 16px;
+    }
+
+    .sc-deger {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 9px 12px;
+        border: 1px solid var(--y-cizgi-soft);
+        border-radius: 9px;
+        background: var(--y-zemin);
+        font-size: 12.5px;
+    }
+
+    .sc-deger + .sc-deger {
+        margin-top: 7px;
+    }
+
+    .sc-deger > span:first-child {
+        flex: 1;
+        color: var(--y-metin);
+        font-weight: 500;
+    }
+
+    .sc-deger-fiyat {
+        color: var(--y-metin-2);
+        white-space: nowrap;
+    }
+
+    .sc-varsayilan {
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--y-primary);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+    }
+
+    .sc-form {
+        padding: 14px 16px;
+        border-top: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .sc-form-satir {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .sc-alan label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    .sc-onay {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12.5px;
+        color: var(--y-metin-2);
+        cursor: pointer;
+    }
+
+    .sc-form-alt {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .sc-bos {
+        padding: 36px 16px;
+        text-align: center;
+        color: var(--y-metin-3);
+        font-size: 13px;
+    }
+
+    .sc-bos i {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 26px;
+        opacity: .4;
+    }
+
+    .sc-urunler {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+    }
+
+    .sc-urun {
+        padding: 4px 10px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--y-metin-2);
+    }
+
+    .sc-urun:hover {
+        border-color: var(--y-primary);
+        color: var(--y-primary);
+    }
+
+    @media (max-width: 900px) {
+        .sc-duzen {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
 </style>
 
-<?php if ($message): ?>
-    <div class="alert alert-success">
-        <i class="fas fa-check-circle"></i>
-        <?= htmlspecialchars($message) ?>
+<div class="page-header">
+    <div>
+        <h1>Yapılandırma seçenekleri</h1>
+        <p>Ürüne eklenebilen ek seçenekler ve fiyatları</p>
+    </div>
+</div>
+
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= htmlspecialchars($mesaj['tip']) ?>">
+        <?= htmlspecialchars($mesaj['metin']) ?>
     </div>
 <?php endif; ?>
 
-<div class="config-layout">
-    <!-- Sidebar - Gruplar -->
-    <div class="config-sidebar">
-        <div class="sidebar-header">
-            <h3><i class="fas fa-cogs"></i> Seçenek Grupları</h3>
-            <p>Yapılandırılabilir seçenekleri yönetin</p>
+<div class="sc-duzen">
+    <!-- Gruplar -->
+    <div class="sc-panel">
+        <div class="sc-bas">
+            <h3>Seçenek grupları</h3>
+            <span><?= count($gruplar) ?></span>
         </div>
-        <div class="group-list">
-            <?php foreach ($groups as $group): 
-                $optionCount = Database::fetchColumn("SELECT COUNT(*) FROM config_options WHERE group_id = ?", [$group['id']]);
-            ?>
-                <a href="?group=<?= $group['id'] ?>" class="group-item <?= $selectedGroupId == $group['id'] ? 'active' : '' ?>">
-                    <span class="group-name"><?= htmlspecialchars($group['name']) ?></span>
-                    <span class="group-count"><?= $optionCount ?></span>
+
+        <?php if (!$gruplar): ?>
+            <div class="sc-bos" style="padding:24px 16px">Henüz grup yok.</div>
+        <?php else: ?>
+            <?php foreach ($gruplar as $g): ?>
+                <a href="config-options.php?grup=<?= (int) $g['id'] ?>"
+                    class="sc-grup <?= $acikGrup === (int) $g['id'] ? 'acik' : '' ?>">
+                    <span>
+                        <b><?= htmlspecialchars((string) $g['name']) ?></b>
+                        <small><?= (int) $g['secenek_sayisi'] ?> seçenek
+                            &middot; <?= (int) $g['urun_sayisi'] ?> ürün</small>
+                    </span>
+                    <i class="fas fa-chevron-right" style="font-size:10px"></i>
                 </a>
             <?php endforeach; ?>
-            
-            <button type="button" class="add-group-btn" onclick="openModal('groupModal')">
-                <i class="fas fa-plus"></i> Yeni Grup
+        <?php endif; ?>
+
+        <form method="POST" class="sc-yeni-grup">
+            <input type="hidden" name="islem" value="grup_kaydet">
+            <input type="text" name="name" class="form-control" required maxlength="255"
+                placeholder="Yeni grup adı">
+            <button type="submit" class="btn btn-outline">
+                <i class="fas fa-plus"></i> Grup ekle
             </button>
-        </div>
+        </form>
     </div>
-    
-    <!-- Main Content -->
-    <div class="config-main">
-        <?php if ($selectedGroup): ?>
-            <div class="main-header">
-                <h2>
-                    <i class="fas fa-sliders-h"></i>
-                    <?= htmlspecialchars($selectedGroup['name']) ?>
-                </h2>
-                <div class="header-actions">
-                    <button class="btn btn-outline btn-sm" onclick="editGroup(<?= $selectedGroup['id'] ?>, '<?= htmlspecialchars($selectedGroup['name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($selectedGroup['description'] ?? '', ENT_QUOTES) ?>')">
-                        <i class="fas fa-edit"></i> Düzenle
-                    </button>
-                    <button class="btn btn-primary btn-sm" onclick="openModal('optionModal')">
-                        <i class="fas fa-plus"></i> Seçenek Ekle
-                    </button>
+
+    <!-- Seçilen grup -->
+    <div>
+        <?php if (!$grup): ?>
+            <div class="sc-panel">
+                <div class="sc-bos">
+                    <i class="fas fa-sliders"></i>
+                    Soldan bir grup seçin ya da yeni grup ekleyin.
                 </div>
             </div>
-            
-            <div class="options-list">
-                <?php if (empty($options)): ?>
-                    <div class="empty-state">
-                        <div class="empty-icon">⚙️</div>
-                        <h3>Henüz seçenek yok</h3>
-                        <p>Bu gruba yapılandırılabilir seçenekler ekleyin</p>
-                        <button class="btn btn-primary" onclick="openModal('optionModal')">
-                            <i class="fas fa-plus"></i> İlk Seçeneği Ekle
+        <?php else: ?>
+            <div class="sc-panel">
+                <div class="sc-bas">
+                    <h3><?= htmlspecialchars((string) $grup['name']) ?></h3>
+                    <form method="POST" style="margin:0"
+                        onsubmit="return confirm('Grup ve içindeki tüm seçenekler silinecek. Emin misiniz?')">
+                        <input type="hidden" name="islem" value="grup_sil">
+                        <input type="hidden" name="group_id" value="<?= (int) $grup['id'] ?>">
+                        <button type="submit" class="sc-dugme tehlike" title="Grubu sil">
+                            <i class="fas fa-trash"></i>
                         </button>
-                    </div>
-                <?php else: ?>
-                    <?php foreach ($options as $option): 
-                        $typeIcon = match($option['option_type']) {
-                            'dropdown' => 'fa-caret-down',
-                            'radio' => 'fa-dot-circle',
-                            'checkbox' => 'fa-check-square',
-                            'quantity' => 'fa-hashtag',
-                            default => 'fa-list'
-                        };
-                    ?>
-                        <div class="option-card">
-                            <div class="option-header">
-                                <div class="option-info">
-                                    <div class="option-icon">
-                                        <i class="fas <?= $typeIcon ?>"></i>
-                                    </div>
-                                    <div class="option-details">
-                                        <h4><?= htmlspecialchars($option['name']) ?></h4>
-                                        <div class="option-meta">
-                                            <span class="badge badge-<?= $option['option_type'] ?>"><?= ucfirst($option['option_type']) ?></span>
-                                            <?php if ($option['required']): ?>
-                                                <span class="badge badge-required">Zorunlu</span>
-                                            <?php endif; ?>
-                                            <span><?= count($option['values']) ?> değer</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="option-actions">
-                                    <button class="btn-edit" onclick="editOption(<?= $option['id'] ?>, '<?= htmlspecialchars($option['name'], ENT_QUOTES) ?>', '<?= $option['option_type'] ?>', <?= $option['required'] ?>)">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <button class="btn-delete" onclick="deleteOption(<?= $option['id'] ?>)">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <?php if (!empty($option['values'])): ?>
-                                <div class="values-table">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>Değer</th>
-                                                <th>Aylık</th>
-                                                <th>Yıllık</th>
-                                                <th>Kurulum</th>
-                                                <th style="width: 100px;"></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($option['values'] as $value): ?>
-                                                <tr>
-                                                    <td>
-                                                        <span class="value-name">
-                                                            <?= htmlspecialchars($value['name']) ?>
-                                                            <?php if ($value['is_default']): ?>
-                                                                <span class="default-badge">Varsayılan</span>
-                                                            <?php endif; ?>
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span class="price <?= $value['price_monthly'] == 0 ? 'zero' : '' ?>">
-                                                            <?= $value['price_monthly'] > 0 ? '+' . number_format((float)$value['price_monthly'], 2) . ' ₺' : 'Ücretsiz' ?>
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span class="price <?= $value['price_annually'] == 0 ? 'zero' : '' ?>">
-                                                            <?= $value['price_annually'] > 0 ? '+' . number_format((float)$value['price_annually'], 2) . ' ₺' : '-' ?>
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span class="price <?= $value['setup_fee'] == 0 ? 'zero' : '' ?>">
-                                                            <?= $value['setup_fee'] > 0 ? '+' . number_format((float)$value['setup_fee'], 2) . ' ₺' : '-' ?>
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <div class="option-actions">
-                                                            <button class="btn-edit" onclick="editValue(<?= $value['id'] ?>, <?= $option['id'] ?>, '<?= htmlspecialchars($value['name'], ENT_QUOTES) ?>', <?= $value['price_monthly'] ?>, <?= $value['price_annually'] ?>, <?= $value['setup_fee'] ?>, <?= $value['is_default'] ?>)">
-                                                                <i class="fas fa-edit"></i>
-                                                            </button>
-                                                            <button class="btn-delete" onclick="deleteValue(<?= $value['id'] ?>)">
-                                                                <i class="fas fa-trash"></i>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            <?php endif; ?>
-                            
-                            <div class="add-value-row">
-                                <button type="button" onclick="addValue(<?= $option['id'] ?>)">
-                                    <i class="fas fa-plus"></i> Değer Ekle
-                                </button>
-                            </div>
+                    </form>
+                </div>
+
+                <form method="POST" class="sc-govde">
+                    <input type="hidden" name="islem" value="grup_kaydet">
+                    <input type="hidden" name="group_id" value="<?= (int) $grup['id'] ?>">
+                    <div class="sc-form-satir">
+                        <div class="sc-alan">
+                            <label for="grup_ad">Grup adı</label>
+                            <input type="text" name="name" id="grup_ad" class="form-control" required
+                                maxlength="255" value="<?= htmlspecialchars((string) $grup['name']) ?>">
                         </div>
-                    <?php endforeach; ?>
+                        <div class="sc-alan">
+                            <label for="grup_aciklama">Açıklama</label>
+                            <input type="text" name="description" id="grup_aciklama" class="form-control"
+                                maxlength="500"
+                                value="<?= htmlspecialchars((string) ($grup['description'] ?? '')) ?>">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-outline btn-sm">Grubu kaydet</button>
+                </form>
+
+                <?php if ($bagliUrunler): ?>
+                    <div class="sc-govde" style="border-top:1px solid var(--y-cizgi)">
+                        <label style="display:block;margin-bottom:7px;font-size:11.5px;color:var(--y-metin-3)">
+                            Bu grubu kullanan ürünler
+                        </label>
+                        <div class="sc-urunler">
+                            <?php foreach ($bagliUrunler as $u): ?>
+                                <a href="product-edit.php?id=<?= (int) $u['id'] ?>" class="sc-urun">
+                                    <?= htmlspecialchars((string) $u['name']) ?>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
                 <?php endif; ?>
             </div>
-        <?php else: ?>
-            <div class="empty-state" style="padding: 100px 20px;">
-                <div class="empty-icon">📦</div>
-                <h3>Grup Seçilmedi</h3>
-                <p>Sol menüden bir grup seçin veya yeni grup oluşturun</p>
-                <button class="btn btn-primary" onclick="openModal('groupModal')">
-                    <i class="fas fa-plus"></i> Yeni Grup Oluştur
-                </button>
+
+            <div class="sc-panel">
+                <div class="sc-bas">
+                    <h3>Seçenekler</h3>
+                    <span><?= count($secenekler) ?></span>
+                </div>
+
+                <?php if (!$secenekler): ?>
+                    <div class="sc-bos">
+                        <i class="fas fa-list-check"></i>
+                        Bu grupta seçenek yok. Aşağıdan ekleyin.
+                    </div>
+                <?php endif; ?>
+
+                <?php foreach ($secenekler as $s):
+                    $duzenle = $duzenlenenSecenek && (int) $duzenlenenSecenek['id'] === (int) $s['id'];
+                    ?>
+                    <div class="sc-secenek">
+                        <div class="sc-secenek-bas">
+                            <div>
+                                <b><?= htmlspecialchars((string) $s['name']) ?></b>
+                                <div class="sc-etiketler">
+                                    <span class="sc-etiket"><?= SC_TURLER[$s['option_type']] ?? htmlspecialchars((string) $s['option_type']) ?></span>
+                                    <?php if ((int) $s['required'] === 1): ?>
+                                        <span class="sc-etiket">Zorunlu</span>
+                                    <?php endif; ?>
+                                    <span class="sc-etiket"><?= count($s['degerler']) ?> değer</span>
+                                </div>
+                            </div>
+                            <div class="sc-eylem">
+                                <a href="config-options.php?grup=<?= $acikGrup ?>&secenek=<?= (int) $s['id'] ?>"
+                                    class="sc-dugme" title="Düzenle"><i class="fas fa-pen"></i></a>
+                                <form method="POST"
+                                    onsubmit="return confirm('<?= htmlspecialchars(addslashes((string) $s['name'])) ?> ve değerleri silinecek. Emin misiniz?')">
+                                    <input type="hidden" name="islem" value="secenek_sil">
+                                    <input type="hidden" name="option_id" value="<?= (int) $s['id'] ?>">
+                                    <button type="submit" class="sc-dugme tehlike" title="Sil">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <?php if ($s['degerler']): ?>
+                            <div class="sc-degerler">
+                                <?php foreach ($s['degerler'] as $d): ?>
+                                    <div class="sc-deger">
+                                        <span><?= htmlspecialchars((string) $d['name']) ?></span>
+                                        <?php if ((int) $d['is_default'] === 1): ?>
+                                            <span class="sc-varsayilan">Varsayılan</span>
+                                        <?php endif; ?>
+                                        <span class="sc-deger-fiyat">
+                                            <?= scPara($d['price_monthly']) ?>/ay
+                                            <?php if ((float) $d['setup_fee'] > 0): ?>
+                                                &middot; kurulum <?= scPara($d['setup_fee']) ?>
+                                            <?php endif; ?>
+                                        </span>
+                                        <form method="POST"
+                                            onsubmit="return confirm('<?= htmlspecialchars(addslashes((string) $d['name'])) ?> silinecek. Emin misiniz?')">
+                                            <input type="hidden" name="islem" value="deger_sil">
+                                            <input type="hidden" name="value_id" value="<?= (int) $d['id'] ?>">
+                                            <button type="submit" class="sc-dugme tehlike" title="Sil">
+                                                <i class="fas fa-xmark"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if ($duzenle): ?>
+                            <form method="POST" class="sc-form">
+                                <input type="hidden" name="islem" value="secenek_kaydet">
+                                <input type="hidden" name="option_id" value="<?= (int) $s['id'] ?>">
+                                <div class="sc-form-satir">
+                                    <div class="sc-alan">
+                                        <label>Seçenek adı</label>
+                                        <input type="text" name="name" class="form-control" required
+                                            maxlength="255" value="<?= htmlspecialchars((string) $s['name']) ?>">
+                                    </div>
+                                    <div class="sc-alan">
+                                        <label>Tür</label>
+                                        <select name="option_type" class="form-control">
+                                            <?php foreach (SC_TURLER as $deger => $ad): ?>
+                                                <option value="<?= $deger ?>"
+                                                    <?= $s['option_type'] === $deger ? 'selected' : '' ?>><?= $ad ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="sc-alan">
+                                        <label>Sıra</label>
+                                        <input type="number" name="order_priority" class="form-control"
+                                            min="0" max="999" value="<?= (int) $s['order_priority'] ?>">
+                                    </div>
+                                </div>
+                                <div class="sc-form-alt">
+                                    <label class="sc-onay">
+                                        <input type="checkbox" name="required" value="1"
+                                            <?= (int) $s['required'] === 1 ? 'checked' : '' ?>>
+                                        Müşteri seçmek zorunda
+                                    </label>
+                                    <div style="display:flex;gap:8px">
+                                        <a href="config-options.php?grup=<?= $acikGrup ?>"
+                                            class="btn btn-sm btn-outline">Vazgeç</a>
+                                        <button type="submit" class="btn btn-sm btn-primary">Kaydet</button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <form method="POST" class="sc-form" style="border-top:1px dashed var(--y-cizgi)">
+                                <input type="hidden" name="islem" value="deger_kaydet">
+                                <input type="hidden" name="option_id" value="<?= (int) $s['id'] ?>">
+                                <div class="sc-form-satir">
+                                    <div class="sc-alan">
+                                        <label>Yeni değer</label>
+                                        <input type="text" name="name" class="form-control" required
+                                            maxlength="255" placeholder="32 GB RAM">
+                                    </div>
+                                    <div class="sc-alan">
+                                        <label>Aylık</label>
+                                        <input type="text" name="price_monthly" class="form-control"
+                                            inputmode="decimal" placeholder="0">
+                                    </div>
+                                    <div class="sc-alan">
+                                        <label>3 aylık</label>
+                                        <input type="text" name="price_quarterly" class="form-control"
+                                            inputmode="decimal" placeholder="0">
+                                    </div>
+                                    <div class="sc-alan">
+                                        <label>6 aylık</label>
+                                        <input type="text" name="price_semiannually" class="form-control"
+                                            inputmode="decimal" placeholder="0">
+                                    </div>
+                                    <div class="sc-alan">
+                                        <label>Yıllık</label>
+                                        <input type="text" name="price_annually" class="form-control"
+                                            inputmode="decimal" placeholder="0">
+                                    </div>
+                                    <div class="sc-alan">
+                                        <label>Kurulum</label>
+                                        <input type="text" name="setup_fee" class="form-control"
+                                            inputmode="decimal" placeholder="0">
+                                    </div>
+                                </div>
+                                <div class="sc-form-alt">
+                                    <label class="sc-onay">
+                                        <input type="checkbox" name="is_default" value="1">
+                                        Varsayılan seçili gelsin
+                                    </label>
+                                    <button type="submit" class="btn btn-sm btn-outline">Değer ekle</button>
+                                </div>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+
+                <form method="POST" class="sc-form">
+                    <input type="hidden" name="islem" value="secenek_kaydet">
+                    <input type="hidden" name="group_id" value="<?= (int) $grup['id'] ?>">
+                    <div class="sc-form-satir">
+                        <div class="sc-alan">
+                            <label for="yeni_secenek">Yeni seçenek</label>
+                            <input type="text" name="name" id="yeni_secenek" class="form-control" required
+                                maxlength="255" placeholder="Ek RAM">
+                        </div>
+                        <div class="sc-alan">
+                            <label for="yeni_tur">Tür</label>
+                            <select name="option_type" id="yeni_tur" class="form-control">
+                                <?php foreach (SC_TURLER as $deger => $ad): ?>
+                                    <option value="<?= $deger ?>"><?= $ad ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="sc-form-alt">
+                        <label class="sc-onay">
+                            <input type="checkbox" name="required" value="1">
+                            Müşteri seçmek zorunda
+                        </label>
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus"></i> Seçenek ekle
+                        </button>
+                    </div>
+                </form>
             </div>
         <?php endif; ?>
     </div>
 </div>
 
-<!-- Grup Modal -->
-<div id="groupModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-folder-plus"></i> <span id="groupModalTitle">Yeni Grup</span></h3>
-            <button type="button" class="modal-close" onclick="closeModal('groupModal')">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <form method="POST" id="groupForm">
-            <input type="hidden" name="action" id="groupAction" value="add_group">
-            <input type="hidden" name="group_id" id="editGroupId" value="">
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Grup Adı</label>
-                    <input type="text" name="group_name" id="groupName" class="form-control" placeholder="Örn: Sunucu Özellikleri" required>
-                </div>
-                <div class="form-group">
-                    <label>Açıklama (Opsiyonel)</label>
-                    <textarea name="group_desc" id="groupDesc" class="form-control" rows="3" placeholder="Bu grup hakkında kısa bilgi..."></textarea>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline" onclick="closeModal('groupModal')">İptal</button>
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Kaydet
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Seçenek Modal -->
-<div id="optionModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-plus-circle"></i> <span id="optionModalTitle">Yeni Seçenek</span></h3>
-            <button type="button" class="modal-close" onclick="closeModal('optionModal')">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <form method="POST" id="optionForm">
-            <input type="hidden" name="action" id="optionAction" value="add_option">
-            <input type="hidden" name="group_id" value="<?= $selectedGroupId ?>">
-            <input type="hidden" name="option_id" id="editOptionId" value="">
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Seçenek Adı</label>
-                    <input type="text" name="option_name" id="optionName" class="form-control" placeholder="Örn: RAM Miktarı" required>
-                </div>
-                <div class="form-group">
-                    <label>Seçim Tipi</label>
-                    <select name="option_type" id="optionType" class="form-control">
-                        <option value="dropdown">Dropdown (Tek Seçim)</option>
-                        <option value="radio">Radio Button (Tek Seçim)</option>
-                        <option value="checkbox">Checkbox (Çoklu Seçim)</option>
-                        <option value="quantity">Miktar (Sayı Girişi)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="required" id="optionRequired">
-                        <span>Zorunlu seçenek</span>
-                    </label>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline" onclick="closeModal('optionModal')">İptal</button>
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Kaydet
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Değer Modal -->
-<div id="valueModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-tag"></i> <span id="valueModalTitle">Yeni Değer</span></h3>
-            <button type="button" class="modal-close" onclick="closeModal('valueModal')">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <form method="POST" id="valueForm">
-            <input type="hidden" name="action" id="valueAction" value="add_value">
-            <input type="hidden" name="option_id" id="valueOptionId" value="">
-            <input type="hidden" name="value_id" id="editValueId" value="">
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Değer Adı</label>
-                    <input type="text" name="value_name" id="valueName" class="form-control" placeholder="Örn: 32 GB RAM" required>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Aylık Ek Ücret</label>
-                        <input type="number" name="price_monthly" id="valueMonthly" class="form-control" step="0.01" value="0" placeholder="0.00">
-                    </div>
-                    <div class="form-group">
-                        <label>Yıllık Ek Ücret</label>
-                        <input type="number" name="price_annually" id="valueAnnually" class="form-control" step="0.01" value="0" placeholder="0.00">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Kurulum Ücreti</label>
-                    <input type="number" name="setup_fee" id="valueSetup" class="form-control" step="0.01" value="0" placeholder="0.00">
-                </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="is_default" id="valueDefault">
-                        <span>Varsayılan değer olarak ayarla</span>
-                    </label>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline" onclick="closeModal('valueModal')">İptal</button>
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Kaydet
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Silme Formu -->
-<form id="deleteForm" method="POST" style="display: none;">
-    <input type="hidden" name="action" id="deleteAction" value="">
-    <input type="hidden" name="group_id" id="deleteGroupId" value="">
-    <input type="hidden" name="option_id" id="deleteOptionId" value="">
-    <input type="hidden" name="value_id" id="deleteValueId" value="">
-</form>
-
-<script>
-function openModal(id) {
-    document.getElementById(id).classList.add('show');
-}
-
-function closeModal(id) {
-    document.getElementById(id).classList.remove('show');
-    // Reset forms
-    if (id === 'groupModal') {
-        document.getElementById('groupAction').value = 'add_group';
-        document.getElementById('editGroupId').value = '';
-        document.getElementById('groupName').value = '';
-        document.getElementById('groupDesc').value = '';
-        document.getElementById('groupModalTitle').textContent = 'Yeni Grup';
-    }
-    if (id === 'optionModal') {
-        document.getElementById('optionAction').value = 'add_option';
-        document.getElementById('editOptionId').value = '';
-        document.getElementById('optionName').value = '';
-        document.getElementById('optionType').value = 'dropdown';
-        document.getElementById('optionRequired').checked = false;
-        document.getElementById('optionModalTitle').textContent = 'Yeni Seçenek';
-    }
-    if (id === 'valueModal') {
-        document.getElementById('valueAction').value = 'add_value';
-        document.getElementById('editValueId').value = '';
-        document.getElementById('valueName').value = '';
-        document.getElementById('valueMonthly').value = '0';
-        document.getElementById('valueAnnually').value = '0';
-        document.getElementById('valueSetup').value = '0';
-        document.getElementById('valueDefault').checked = false;
-        document.getElementById('valueModalTitle').textContent = 'Yeni Değer';
-    }
-}
-
-function editGroup(id, name, desc) {
-    document.getElementById('groupAction').value = 'update_group';
-    document.getElementById('editGroupId').value = id;
-    document.getElementById('groupName').value = name;
-    document.getElementById('groupDesc').value = desc;
-    document.getElementById('groupModalTitle').textContent = 'Grubu Düzenle';
-    openModal('groupModal');
-}
-
-function editOption(id, name, type, required) {
-    document.getElementById('optionAction').value = 'update_option';
-    document.getElementById('editOptionId').value = id;
-    document.getElementById('optionName').value = name;
-    document.getElementById('optionType').value = type;
-    document.getElementById('optionRequired').checked = required == 1;
-    document.getElementById('optionModalTitle').textContent = 'Seçeneği Düzenle';
-    openModal('optionModal');
-}
-
-function deleteOption(id) {
-    if (confirm('Bu seçeneği ve tüm değerlerini silmek istediğinizden emin misiniz?')) {
-        document.getElementById('deleteAction').value = 'delete_option';
-        document.getElementById('deleteOptionId').value = id;
-        document.getElementById('deleteForm').submit();
-    }
-}
-
-function addValue(optionId) {
-    document.getElementById('valueOptionId').value = optionId;
-    document.getElementById('valueAction').value = 'add_value';
-    openModal('valueModal');
-}
-
-function editValue(id, optionId, name, monthly, annually, setup, isDefault) {
-    document.getElementById('valueAction').value = 'update_value';
-    document.getElementById('editValueId').value = id;
-    document.getElementById('valueOptionId').value = optionId;
-    document.getElementById('valueName').value = name;
-    document.getElementById('valueMonthly').value = monthly;
-    document.getElementById('valueAnnually').value = annually;
-    document.getElementById('valueSetup').value = setup;
-    document.getElementById('valueDefault').checked = isDefault == 1;
-    document.getElementById('valueModalTitle').textContent = 'Değeri Düzenle';
-    openModal('valueModal');
-}
-
-function deleteValue(id) {
-    if (confirm('Bu değeri silmek istediğinizden emin misiniz?')) {
-        document.getElementById('deleteAction').value = 'delete_value';
-        document.getElementById('deleteValueId').value = id;
-        document.getElementById('deleteForm').submit();
-    }
-}
-
-// Close modal on outside click
-document.querySelectorAll('.modal').forEach(modal => {
-    modal.addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeModal(this.id);
-        }
-    });
-});
-</script>
-
-<?php include 'includes/footer.php'; ?>
-
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
