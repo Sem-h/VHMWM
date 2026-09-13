@@ -128,7 +128,7 @@ function yonetimMenusu(): array
 function yonetimRozetleri(): array
 {
     $sorgular = [
-        'destek' => "SELECT COUNT(*) FROM tickets WHERE status IN ('open','customer-reply')",
+        'destek' => "SELECT COUNT(*) FROM tickets WHERE status IN ('open','customer_reply','on_hold')",
         'iptal' => "SELECT COUNT(*) FROM cancellation_requests WHERE status = 'pending'",
         'kesif' => "SELECT COUNT(*) FROM kesif_talepleri WHERE durum = 'yeni'",
         'iletisim' => "SELECT COUNT(*) FROM iletisim_mesajlari WHERE durum = 'yeni'",
