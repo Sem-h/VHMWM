@@ -73,8 +73,9 @@ class Installer
 
     public function importAllSQL(): bool
     {
-        // Ana veritabanı dosyası önce import edilmeli
-        $mainFile = __DIR__ . '/whmvm_full.sql';
+        // Şema dosyası önce import edilmeli. Bu dosya yalnızca tablo
+        // yapısını içerir; satır verisi taşımaz.
+        $mainFile = __DIR__ . '/whmvm-kurulum.sql';
         if (file_exists($mainFile)) {
             if (!$this->importSQL($mainFile)) {
                 return false;
@@ -82,15 +83,15 @@ class Installer
         }
 
         // Ek SQL dosyaları
+        // Varsayılan e-posta şablonu gibi uygulamanın çalışması için
+        // gereken kayıtlar. Müşteri verisi taşıyan dosya yoktur.
         $additionalFiles = [
-            'schema.sql',
             'affiliate_tables.sql',
             'email_tables.sql',
             'esxi_tables.sql',
             'config_options_tables.sql',
             'product_columns.sql',
             'references_table.sql',
-            'clients_data.sql'
         ];
 
         foreach ($additionalFiles as $file) {

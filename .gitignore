@@ -29,6 +29,7 @@
 /install/clients_data.sql
 /install/whmvm_full*.sql
 /install/*_export.sql
+/install/export_clients.php
 /install/*_backup*.sql
 /admin/delete-except.php
 

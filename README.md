@@ -193,8 +193,8 @@ kesiti) SVG olarak kodda üretilir — harici görsel dosyası gerekmez, her
 <summary><b>1 · Dosyaları alın</b></summary>
 
 ```bash
-git clone https://github.com/Sem-h/WHMVM.git
-cd WHMVM
+git clone https://github.com/Sem-h/VHMWM.git
+cd VHMWM
 ```
 </details>
 
@@ -206,9 +206,16 @@ mysql -u root -e "CREATE DATABASE whmvm CHARACTER SET utf8mb4 COLLATE utf8mb4_un
 mysql -u root whmvm < install/whmvm-kurulum.sql
 ```
 
-Bu dosya şemayı ve başlangıç verisini (ürün grupları, menü, diller, e-posta
-şablonları) kurar. **Müşteri verisi içermez**; SMTP ve alan adı sağlayıcı
-parolaları boştur, kurulumdan sonra panelden girilir.
+Bu dosya **yalnızca tablo yapısını** kurar — 57 tablo, sıfır satır veri.
+Ürün, ayar, çeviri ya da kimlik bilgisi içermez. Uygulamanın çalışması için
+gereken varsayılanlar (e-posta şablonları, menü) sonraki adımdaki kurulum
+sihirbazı tarafından oluşturulur.
+
+Şemayı değiştirdiğinizde (yeni tablo veya sütun) dosyayı yeniden üretin:
+
+```bash
+php install/sema-disari-aktar.php
+```
 </details>
 
 <details open>
@@ -304,9 +311,10 @@ Vitrin sayfaları kök dizindedir: `index.php`, `store.php`, `ssl.php`, `vds.php
 
 - `config/config.php`, `config/ip-config.php` — veritabanı bilgileri, şifreleme
   anahtarı, sunucu adresi
-- Veritabanı dökümleri ve `.bson` dosyaları — **kişisel veri içeren hiçbir döküm
-  depoya eklenmemelidir.** Dökümler hex kodlanmış olabilir ve metin aramasına
-  takılmaz; bu yüzden dosya türü üzerinden engellenir
+- **Veritabanı verisi** — depoya yalnızca şema (tablo, sütun, indeks) girer.
+  Satır verisi hiçbir biçimde eklenmez. Dökümler hex kodlanmış olabilir ve
+  metin aramasına takılmaz; bu yüzden dosya türü üzerinden engellenir
+- Veritabanı dökümleri, `.bson` ve `.zip` çıktıları
 - Paketlenmiş `.zip` çıktıları — sürüm paketi Releases üzerinden dağıtılmalı
 - Yedek dosyaları (`*.bak`, `*.backup`), çalıştırma betikleri (`*.bat`, `*.ps1`)
 - `README.md` dışındaki bütün `.md` dosyaları
