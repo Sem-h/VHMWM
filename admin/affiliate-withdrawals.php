@@ -1,627 +1,591 @@
 <?php
 /**
- * WHMVM Admin - Affiliate Çekim Talepleri
+ * VHM - Çekim talepleri
+ *
+ * Önceki sürümde para yaratabilen bir hata vardı: durum geçişi hiç
+ * denetlenmiyordu. Zaten reddedilmiş bir talep tekrar reddedilirse
+ *
+ *     UPDATE affiliates SET balance = balance + ?
+ *
+ * ikinci kez çalışıyor, ortağın bakiyesine aynı tutar bir daha
+ * ekleniyordu. Aynı şekilde tamamlanmış bir talep tekrar tamamlanınca
+ * total_withdrawn iki kez artıyordu. PRG de olmadığı için sayfayı
+ * yenilemek bunu tetikliyordu.
+ *
+ * Artık:
+ *   - yalnızca izin verilen durum geçişleri uygulanıyor
+ *   - durum ve bakiye güncellemesi tek işlem içinde
+ *   - CSRF belirteci zorunlu, işlemden sonra yönlendirme yapılıyor
  */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-require_once dirname(__DIR__) . '/includes/Settings.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
-$pageTitle = 'Çekim Talepleri';
+if (!isset($_SESSION['admin_id'])) {
+    header('Location: index.php');
+    exit;
+}
+
+$pageTitle = 'Çekim talepleri';
 $currentPage = 'affiliate-withdrawals';
 
-$message = '';
-$messageType = 'success';
+/* affiliate_withdrawals.status enum'u ile birebir aynı */
+$durumlar = [
+    'pending' => ['Bekliyor', 'badge-warning', 'fa-clock'],
+    'processing' => ['İşlemde', 'badge-info', 'fa-spinner'],
+    'completed' => ['Tamamlandı', 'badge-success', 'fa-circle-check'],
+    'rejected' => ['Reddedildi', 'badge-danger', 'fa-circle-xmark'],
+];
 
-// İşlemler
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $withdrawalId = (int)$_POST['withdrawal_id'];
-    $action = $_POST['action'] ?? '';
-    $adminNotes = $_POST['admin_notes'] ?? '';
-    
-    // Çekim bilgilerini al
-    $withdrawal = Database::fetch("SELECT * FROM affiliate_withdrawals WHERE id = ?", [$withdrawalId]);
-    
-    if ($withdrawal) {
-        if ($action === 'approve') {
-            // Onayla ve işleme al
-            Database::query(
-                "UPDATE affiliate_withdrawals SET status = 'processing', admin_notes = ?, processed_by = ?, processed_at = NOW() WHERE id = ?",
-                [$adminNotes, $_SESSION['admin_id'], $withdrawalId]
+/**
+ * İzin verilen durum geçişleri.
+ * Tamamlanmış ya da reddedilmiş talep son durumdur; tekrar işlenemez.
+ */
+$gecisler = [
+    'islemealin' => ['hedef' => 'processing', 'izin' => ['pending'], 'ad' => 'işleme alındı'],
+    'tamamla' => ['hedef' => 'completed', 'izin' => ['pending', 'processing'], 'ad' => 'tamamlandı'],
+    'reddet' => ['hedef' => 'rejected', 'izin' => ['pending', 'processing'], 'ad' => 'reddedildi'],
+];
+
+$tabloVar = true;
+try {
+    Database::fetchColumn("SELECT 1 FROM affiliate_withdrawals LIMIT 1");
+} catch (Throwable $e) {
+    $tabloVar = false;
+    error_log('Çekim tablosu okunamadı: ' . $e->getMessage());
+}
+
+function cekimMesaj(string $tip, string $metin): void
+{
+    $_SESSION['cekim_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: affiliate-withdrawals.php');
+    exit;
+}
+
+/* ---------- İşlem ---------- */
+if ($tabloVar && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['islem'])) {
+    Guvenlik::zorunlu();
+
+    $id = (int) ($_POST['withdrawal_id'] ?? 0);
+    $islem = (string) $_POST['islem'];
+    $not = mb_substr(trim((string) ($_POST['admin_notes'] ?? '')), 0, 1000);
+
+    if ($id <= 0 || !isset($gecisler[$islem])) {
+        cekimMesaj('error', 'Geçersiz işlem.');
+    }
+
+    $kural = $gecisler[$islem];
+    $db = Database::getInstance();
+
+    try {
+        $db->beginTransaction();
+
+        /* Satırı kilitleyerek oku: iki sekmeden aynı anda işlenirse
+           ikisi de geçerli görünmesin. */
+        $talep = Database::fetch(
+            "SELECT * FROM affiliate_withdrawals WHERE id = ? FOR UPDATE",
+            [$id]
+        );
+
+        if (!$talep) {
+            throw new RuntimeException('Çekim talebi bulunamadı.');
+        }
+
+        /* Asıl düzeltme: mevcut durum izin verilenler arasında değilse
+           hiçbir para hareketi yapılmaz. */
+        if (!in_array((string) $talep['status'], $kural['izin'], true)) {
+            $mevcut = $durumlar[$talep['status']][0] ?? $talep['status'];
+            throw new RuntimeException(
+                'Bu talep "' . $mevcut . '" durumunda; bu işlem uygulanamaz.'
             );
-            $message = 'Çekim talebi işleme alındı.';
-        } elseif ($action === 'complete') {
-            // Tamamla
-            Database::query(
-                "UPDATE affiliate_withdrawals SET status = 'completed', admin_notes = ?, processed_by = ?, processed_at = NOW() WHERE id = ?",
-                [$adminNotes, $_SESSION['admin_id'], $withdrawalId]
-            );
-            
-            // Toplam çekilen tutarı güncelle
+        }
+
+        Database::query(
+            "UPDATE affiliate_withdrawals
+                SET status = ?, admin_notes = ?, processed_by = ?, processed_at = NOW()
+              WHERE id = ? AND status = ?",
+            [$kural['hedef'], $not !== '' ? $not : null, (int) $_SESSION['admin_id'], $id, $talep['status']]
+        );
+
+        $tutar = (float) $talep['amount'];
+        $ortakId = (int) $talep['affiliate_id'];
+
+        if ($kural['hedef'] === 'completed') {
             Database::query(
                 "UPDATE affiliates SET total_withdrawn = total_withdrawn + ? WHERE id = ?",
-                [$withdrawal['amount'], $withdrawal['affiliate_id']]
+                [$tutar, $ortakId]
             );
-            
-            $message = 'Çekim talebi tamamlandı.';
-        } elseif ($action === 'reject') {
-            // Reddet ve bakiyeyi iade et
-            Database::query(
-                "UPDATE affiliate_withdrawals SET status = 'rejected', admin_notes = ?, processed_by = ?, processed_at = NOW() WHERE id = ?",
-                [$adminNotes, $_SESSION['admin_id'], $withdrawalId]
-            );
-            
-            // Bakiyeyi geri ekle
+        } elseif ($kural['hedef'] === 'rejected') {
+            /* Talep oluşturulurken bakiyeden düşülmüştü; geri verilir */
             Database::query(
                 "UPDATE affiliates SET balance = balance + ? WHERE id = ?",
-                [$withdrawal['amount'], $withdrawal['affiliate_id']]
+                [$tutar, $ortakId]
             );
-            
-            $message = 'Çekim talebi reddedildi ve bakiye iade edildi.';
         }
+
+        $db->commit();
+
+        $metin = '#' . $id . ' numaralı çekim talebi ' . $kural['ad'] . '.';
+        if ($kural['hedef'] === 'rejected') {
+            $metin .= ' ' . number_format($tutar, 2, ',', '.') . ' ₺ ortağın bakiyesine iade edildi.';
+        } elseif ($kural['hedef'] === 'completed') {
+            $metin .= ' ' . number_format($tutar, 2, ',', '.') . ' ₺ ödendi olarak kaydedildi.';
+        }
+        cekimMesaj('success', $metin);
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('Çekim talebi işlenemedi: ' . $e->getMessage());
+        cekimMesaj('error', $e->getMessage());
     }
 }
 
-// Filtreler
-$statusFilter = $_GET['status'] ?? '';
-
-$where = "WHERE 1=1";
-$params = [];
-
-if ($statusFilter) {
-    $where .= " AND w.status = ?";
-    $params[] = $statusFilter;
+$mesaj = null;
+if (!empty($_SESSION['cekim_mesaj'])) {
+    $mesaj = $_SESSION['cekim_mesaj'];
+    unset($_SESSION['cekim_mesaj']);
 }
 
-// Sayfalama
-$page = max(1, (int)($_GET['page'] ?? 1));
-$perPage = 20;
-$offset = ($page - 1) * $perPage;
+/* ---------- Veriler ---------- */
+$suzgec = (string) ($_GET['durum'] ?? '');
+$sayfa = max(1, (int) ($_GET['page'] ?? 1));
+$adet = 20;
 
-$total = (int)Database::fetchColumn(
-    "SELECT COUNT(*) FROM affiliate_withdrawals w $where",
-    $params
-);
-$totalPages = (int)ceil($total / $perPage);
+$talepler = [];
+$toplam = 0;
+$sayfaSayisi = 1;
+$ozet = [];
 
-$withdrawals = Database::fetchAll(
-    "SELECT w.*, a.affiliate_code, c.first_name, c.last_name, c.email
-     FROM affiliate_withdrawals w
-     JOIN affiliates a ON w.affiliate_id = a.id
-     JOIN clients c ON a.client_id = c.id
-     $where
-     ORDER BY 
-        CASE w.status 
-            WHEN 'pending' THEN 1 
-            WHEN 'processing' THEN 2 
-            ELSE 3 
-        END,
-        w.created_at DESC
-     LIMIT $perPage OFFSET $offset",
-    $params
-);
+if ($tabloVar) {
+    $kosul = [];
+    $par = [];
+    if (isset($durumlar[$suzgec])) {
+        $kosul[] = "w.status = ?";
+        $par[] = $suzgec;
+    }
+    $nerede = $kosul ? ' WHERE ' . implode(' AND ', $kosul) : '';
+    $atla = ($sayfa - 1) * $adet;
 
-// İstatistikler
-$stats = [
-    'pending' => (int)Database::fetchColumn("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status = 'pending'"),
-    'processing' => (int)Database::fetchColumn("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status = 'processing'"),
-    'pending_amount' => (float)Database::fetchColumn("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status IN ('pending', 'processing')"),
-    'completed_amount' => (float)Database::fetchColumn("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status = 'completed'")
-];
+    $guvenli = static function (string $sql, array $p = []): float {
+        try {
+            return (float) Database::fetchColumn($sql, $p);
+        } catch (Throwable $e) {
+            error_log('Çekim sorgusu: ' . $e->getMessage());
+            return 0;
+        }
+    };
 
-include 'includes/header.php';
+    $toplam = (int) $guvenli("SELECT COUNT(*) FROM affiliate_withdrawals w" . $nerede, $par);
+    $sayfaSayisi = max(1, (int) ceil($toplam / $adet));
+
+    try {
+        $talepler = Database::fetchAll(
+            "SELECT w.*, a.affiliate_code, a.balance,
+                    c.first_name, c.last_name, c.email,
+                    y.username AS islem_yapan
+               FROM affiliate_withdrawals w
+               LEFT JOIN affiliates a ON a.id = w.affiliate_id
+               LEFT JOIN clients c ON c.id = a.client_id
+               LEFT JOIN admins y ON y.id = w.processed_by
+               {$nerede}
+              ORDER BY
+                FIELD(w.status, 'pending', 'processing', 'completed', 'rejected'),
+                w.created_at DESC
+              LIMIT {$adet} OFFSET {$atla}",
+            $par
+        );
+    } catch (Throwable $e) {
+        error_log('Çekim listesi okunamadı: ' . $e->getMessage());
+        $talepler = [];
+    }
+
+    $ozet = [
+        ['Bekleyen', $guvenli("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status = 'pending'"), 'fa-clock', 'pending', false],
+        ['İşlemde', $guvenli("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status = 'processing'"), 'fa-spinner', 'processing', false],
+        ['Ödenecek tutar', $guvenli("SELECT COALESCE(SUM(amount),0) FROM affiliate_withdrawals WHERE status IN ('pending','processing')"), 'fa-turkish-lira-sign', '', true],
+        ['Bugüne kadar ödenen', $guvenli("SELECT COALESCE(SUM(amount),0) FROM affiliate_withdrawals WHERE status = 'completed'"), 'fa-circle-check', 'completed', true],
+    ];
+}
+
+require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* Stats Row */
-.stats-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
-}
+    /* ==========================================
+       Çekim talepleri - ck
+       ========================================== */
+    .ck-ozet {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+    }
 
-.stat-box {
-    background: var(--y-yuzey);
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
+    .ck-ozet-kart {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 17px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        color: var(--y-metin-2);
+        transition: border-color .15s;
+    }
 
-.stat-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-}
+    .ck-ozet-kart:hover {
+        border-color: var(--y-primary);
+        text-decoration: none;
+    }
 
-.stat-icon.yellow { background: #fef3c7; }
-.stat-icon.blue { background: #dbeafe; }
-.stat-icon.orange { background: #ffedd5; }
-.stat-icon.green { background: #d1fae5; }
+    .ck-ozet-kart.secili {
+        border-color: var(--y-primary);
+        background: var(--y-primary-soft);
+    }
 
-.stat-info h4 {
-    font-size: 24px;
-    font-weight: 700;
-    color: var(--dark);
-    margin-bottom: 4px;
-}
+    .ck-ozet-ikon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 15px;
+    }
 
-.stat-info p {
-    font-size: 13px;
-    color: var(--gray);
-}
+    .ck-ozet-kart b {
+        display: block;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--y-metin);
+        line-height: 1.2;
+    }
 
-/* Filters */
-.filters {
-    background: var(--y-yuzey);
-    padding: 20px;
-    border-radius: 12px;
-    margin-bottom: 20px;
-    display: flex;
-    gap: 15px;
-    align-items: center;
-}
+    .ck-ozet-kart span {
+        font-size: 12.5px;
+        color: var(--y-metin-3);
+    }
 
-.filters select {
-    padding: 10px 15px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 14px;
-}
+    .ck-suzgec {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+    }
 
-.btn {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.2s;
-}
+    .ck-suzgec a {
+        padding: 8px 14px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: 999px;
+        background: var(--y-yuzey);
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--y-metin-2);
+    }
 
-.btn-sm { padding: 8px 14px; font-size: 13px; }
-.btn-primary { background: var(--primary); color: white; }
-.btn-success { background: var(--success); color: white; }
-.btn-warning { background: var(--warning); color: white; }
-.btn-danger { background: var(--danger); color: white; }
-.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--dark); }
+    .ck-suzgec a:hover {
+        border-color: var(--y-primary);
+        color: var(--y-primary);
+        text-decoration: none;
+    }
 
-/* Table */
-.data-table {
-    width: 100%;
-    background: var(--y-yuzey);
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
+    .ck-suzgec a.secili {
+        border-color: var(--y-primary);
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+    }
 
-.data-table table {
-    width: 100%;
-    border-collapse: collapse;
-}
+    .ck-liste {
+        display: grid;
+        gap: 13px;
+    }
 
-.data-table th {
-    text-align: left;
-    padding: 14px 18px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--gray);
-    text-transform: uppercase;
-    background: var(--y-yuzey-2);
-    border-bottom: 1px solid var(--border);
-}
+    .ck-kart {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
 
-.data-table td {
-    padding: 16px 18px;
-    border-bottom: 1px solid var(--y-cizgi-soft);
-    font-size: 14px;
-}
+    .ck-kart.bekliyor {
+        border-left: 4px solid var(--y-warning);
+    }
 
-.data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: var(--y-yuzey-2); }
+    .ck-bas {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 14px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--y-cizgi);
+    }
 
-/* Badge */
-.badge {
-    display: inline-flex;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-}
+    .ck-tutar {
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--y-metin);
+        white-space: nowrap;
+    }
 
-.badge-success { background: #d1fae5; color: #059669; }
-.badge-warning { background: #fef3c7; color: #d97706; }
-.badge-danger { background: #fee2e2; color: #dc2626; }
-.badge-info { background: #dbeafe; color: #2563eb; }
+    .ck-kim {
+        flex: 1;
+        min-width: 180px;
+    }
 
-/* Alert */
-.alert {
-    padding: 15px 20px;
-    border-radius: 10px;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
+    .ck-kim b {
+        display: block;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
 
-.alert-success { background: #d1fae5; color: #059669; }
+    .ck-kim span {
+        font-size: 12px;
+        color: var(--y-metin-3);
+    }
 
-/* Modal */
-.modal {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.5);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-}
+    .ck-govde {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1px;
+        background: var(--y-cizgi);
+    }
 
-.modal.active { display: flex; }
+    .ck-alan {
+        padding: 12px 18px;
+        background: var(--y-yuzey);
+    }
 
-.modal-content {
-    background: var(--y-yuzey);
-    border-radius: 16px;
-    width: 100%;
-    max-width: 500px;
-}
+    .ck-alan b {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: var(--y-metin-3);
+        margin-bottom: 3px;
+    }
 
-.modal-header {
-    padding: 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
+    .ck-alan span {
+        font-size: 13px;
+        color: var(--y-metin);
+        word-break: break-word;
+    }
 
-.modal-header h3 { font-size: 18px; font-weight: 600; }
+    .ck-eylem {
+        padding: 14px 18px;
+        border-top: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
 
-.modal-close {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
-    color: var(--gray);
-}
+    .ck-eylem textarea {
+        min-height: 56px;
+        margin-bottom: 10px;
+        font-size: 12.5px;
+    }
 
-.modal-body { padding: 20px; }
+    .ck-dugmeler {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+    }
 
-/* Form */
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-group label {
-    display: block;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 8px;
-    color: var(--dark);
-}
-
-.form-control {
-    width: 100%;
-    padding: 12px 15px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 14px;
-}
-
-textarea.form-control {
-    min-height: 80px;
-    resize: vertical;
-}
-
-/* Payment Details */
-.payment-box {
-    background: var(--y-yuzey-2);
-    padding: 15px;
-    border-radius: 10px;
-    margin-bottom: 20px;
-}
-
-.payment-box h5 {
-    font-size: 14px;
-    margin-bottom: 10px;
-}
-
-.payment-box pre {
-    background: var(--y-yuzey);
-    padding: 10px;
-    border-radius: 6px;
-    font-size: 13px;
-    white-space: pre-wrap;
-    margin: 0;
-}
-
-/* Action Buttons */
-.action-buttons {
-    display: flex;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.action-buttons .btn {
-    flex: 1;
-    justify-content: center;
-}
-
-/* Empty state */
-.empty-state {
-    text-align: center;
-    padding: 60px 40px;
-    background: var(--y-yuzey);
-    border-radius: 12px;
-}
-
-.empty-state .icon {
-    font-size: 64px;
-    margin-bottom: 20px;
-}
-
-.empty-state h3 {
-    font-size: 20px;
-    margin-bottom: 10px;
-    color: var(--dark);
-}
-
-.empty-state p {
-    color: var(--gray);
-}
-
-/* Pagination */
-.pagination {
-    display: flex;
-    gap: 5px;
-    justify-content: center;
-    margin-top: 20px;
-}
-
-.pagination a {
-    padding: 8px 14px;
-    background: var(--y-yuzey);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--dark);
-    text-decoration: none;
-    font-size: 14px;
-}
-
-.pagination a:hover, .pagination a.active {
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
-}
+    .ck-kapali {
+        padding: 13px 18px;
+        border-top: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+        font-size: 12.5px;
+        color: var(--y-metin-3);
+    }
 </style>
 
-<?php if ($message): ?>
-<div class="alert alert-success">
-    <span>✓</span> <?= htmlspecialchars($message) ?>
+<div class="page-header">
+    <div>
+        <h1>Çekim talepleri</h1>
+        <p><?= number_format($toplam, 0, ',', '.') ?> kayıt<?= $suzgec !== '' ? ' (süzülmüş)' : '' ?></p>
+    </div>
+    <a href="affiliates.php" class="btn btn-outline"><i class="fas fa-handshake"></i> Satış ortakları</a>
 </div>
+
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= $mesaj['tip'] === 'success' ? 'success' : 'error' ?>">
+        <i class="fas fa-<?= $mesaj['tip'] === 'success' ? 'circle-check' : 'circle-exclamation' ?> alert-icon"></i>
+        <span><?= htmlspecialchars((string) $mesaj['metin']) ?></span>
+    </div>
 <?php endif; ?>
 
-<!-- Stats -->
-<div class="stats-row">
-    <div class="stat-box">
-        <div class="stat-icon yellow">⏳</div>
-        <div class="stat-info">
-            <h4><?= number_format($stats['pending']) ?></h4>
-            <p>Bekleyen Talep</p>
-        </div>
+<?php if (!$tabloVar): ?>
+    <div class="alert alert-error">
+        <i class="fas fa-circle-exclamation alert-icon"></i>
+        <span>Satış ortaklığı tabloları bulunamadı. Kurulum dosyasını içe aktarmanız gerekiyor.</span>
     </div>
-    <div class="stat-box">
-        <div class="stat-icon blue">🔄</div>
-        <div class="stat-info">
-            <h4><?= number_format($stats['processing']) ?></h4>
-            <p>İşleniyor</p>
-        </div>
-    </div>
-    <div class="stat-box">
-        <div class="stat-icon orange">💰</div>
-        <div class="stat-info">
-            <h4><?= number_format($stats['pending_amount'], 2) ?> ₺</h4>
-            <p>Bekleyen Tutar</p>
-        </div>
-    </div>
-    <div class="stat-box">
-        <div class="stat-icon green">✅</div>
-        <div class="stat-info">
-            <h4><?= number_format($stats['completed_amount'], 2) ?> ₺</h4>
-            <p>Ödenen Tutar</p>
-        </div>
-    </div>
-</div>
-
-<!-- Filters -->
-<form method="GET" class="filters">
-    <select name="status">
-        <option value="">Tüm Durumlar</option>
-        <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Beklemede</option>
-        <option value="processing" <?= $statusFilter === 'processing' ? 'selected' : '' ?>>İşleniyor</option>
-        <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>Tamamlandı</option>
-        <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>Reddedildi</option>
-    </select>
-    <button type="submit" class="btn btn-primary">🔍 Filtrele</button>
-    <?php if ($statusFilter): ?>
-        <a href="affiliate-withdrawals.php" class="btn btn-outline">✕ Temizle</a>
-    <?php endif; ?>
-</form>
-
-<!-- Withdrawals Table -->
-<?php if (empty($withdrawals)): ?>
-<div class="empty-state">
-    <div class="icon">💸</div>
-    <h3>Çekim talebi bulunamadı</h3>
-    <p>Henüz herhangi bir çekim talebi yok.</p>
-</div>
 <?php else: ?>
-<div class="data-table">
-    <table>
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Ortak</th>
-                <th>Tutar</th>
-                <th>Ödeme Yöntemi</th>
-                <th>Talep Tarihi</th>
-                <th>Durum</th>
-                <th>İşlem</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php foreach ($withdrawals as $wd): ?>
-            <tr>
-                <td>#<?= $wd['id'] ?></td>
-                <td>
-                    <strong><?= htmlspecialchars($wd['first_name'] . ' ' . $wd['last_name']) ?></strong><br>
-                    <small style="color: var(--gray);"><?= htmlspecialchars($wd['affiliate_code']) ?></small>
-                </td>
-                <td><strong style="color: var(--primary);"><?= number_format((float)$wd['amount'], 2) ?> ₺</strong></td>
-                <td>
-                    <?= match($wd['payment_method']) {
-                        'bank_transfer' => '🏦 Banka Havalesi',
-                        'papara' => '💳 Papara',
-                        'paypal' => '💰 PayPal',
-                        default => $wd['payment_method']
-                    } ?>
-                </td>
-                <td><?= date('d.m.Y H:i', strtotime($wd['created_at'])) ?></td>
-                <td>
-                    <?php 
-                    $badgeClass = match($wd['status']) {
-                        'completed' => 'success',
-                        'processing' => 'info',
-                        'rejected' => 'danger',
-                        default => 'warning'
-                    };
-                    $statusText = match($wd['status']) {
-                        'completed' => 'Tamamlandı',
-                        'processing' => 'İşleniyor',
-                        'rejected' => 'Reddedildi',
-                        default => 'Beklemede'
-                    };
-                    ?>
-                    <span class="badge badge-<?= $badgeClass ?>"><?= $statusText ?></span>
-                </td>
-                <td>
-                    <?php if ($wd['status'] === 'pending' || $wd['status'] === 'processing'): ?>
-                        <button class="btn btn-outline btn-sm" onclick="openModal(<?= htmlspecialchars(json_encode($wd)) ?>)">
-                            ⚙️ İşlem
-                        </button>
-                    <?php else: ?>
-                        <span style="color: var(--gray); font-size: 13px;">
-                            <?= $wd['processed_at'] ? date('d.m.Y', strtotime($wd['processed_at'])) : '-' ?>
-                        </span>
-                    <?php endif; ?>
-                </td>
-            </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
-</div>
 
-<?php if ($totalPages > 1): ?>
-<div class="pagination">
-    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-        <a href="?page=<?= $i ?>&status=<?= $statusFilter ?>" 
-           class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
-    <?php endfor; ?>
-</div>
-<?php endif; ?>
-<?php endif; ?>
-
-<!-- Process Modal -->
-<div id="processModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>💸 Çekim Talebi İşleme</h3>
-            <button class="modal-close" onclick="closeModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <form method="POST">
-                <input type="hidden" name="withdrawal_id" id="modal_withdrawal_id">
-                <input type="hidden" name="action" id="modal_action">
-                
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <h2 style="color: var(--primary); margin-bottom: 5px;" id="modal_amount">0.00 ₺</h2>
-                    <p style="color: var(--gray);" id="modal_affiliate_name">-</p>
-                </div>
-                
-                <div class="payment-box">
-                    <h5>💳 Ödeme Bilgileri</h5>
-                    <p><strong>Yöntem:</strong> <span id="modal_payment_method"></span></p>
-                    <pre id="modal_payment_details"></pre>
-                </div>
-                
-                <div class="form-group">
-                    <label>Admin Notu</label>
-                    <textarea name="admin_notes" class="form-control" id="modal_notes" placeholder="İşlem notu (opsiyonel)"></textarea>
-                </div>
-                
-                <div class="action-buttons" id="pending_actions">
-                    <button type="submit" class="btn btn-success" onclick="document.getElementById('modal_action').value='approve'">
-                        ✓ İşleme Al
-                    </button>
-                    <button type="submit" class="btn btn-danger" onclick="document.getElementById('modal_action').value='reject'">
-                        ✕ Reddet
-                    </button>
-                </div>
-                
-                <div class="action-buttons" id="processing_actions" style="display: none;">
-                    <button type="submit" class="btn btn-success" onclick="document.getElementById('modal_action').value='complete'">
-                        ✓ Ödemeyi Tamamla
-                    </button>
-                    <button type="submit" class="btn btn-danger" onclick="document.getElementById('modal_action').value='reject'">
-                        ✕ Reddet
-                    </button>
-                </div>
-            </form>
-        </div>
+    <div class="ck-ozet">
+        <?php foreach ($ozet as [$ad, $deger, $ikon, $filtre, $paraMi]): ?>
+            <a class="ck-ozet-kart <?= $filtre !== '' && $suzgec === $filtre ? 'secili' : '' ?>"
+                href="affiliate-withdrawals.php<?= $filtre !== '' ? '?durum=' . $filtre : '' ?>">
+                <span class="ck-ozet-ikon"><i class="fas <?= $ikon ?>"></i></span>
+                <span>
+                    <b><?= $paraMi
+                        ? number_format($deger, 2, ',', '.') . ' ₺'
+                        : number_format($deger, 0, ',', '.') ?></b>
+                    <span><?= $ad ?></span>
+                </span>
+            </a>
+        <?php endforeach; ?>
     </div>
-</div>
 
-<script>
-function openModal(wd) {
-    document.getElementById('processModal').classList.add('active');
-    document.getElementById('modal_withdrawal_id').value = wd.id;
-    document.getElementById('modal_amount').textContent = Number(wd.amount).toLocaleString('tr-TR', {minimumFractionDigits: 2}) + ' ₺';
-    document.getElementById('modal_affiliate_name').textContent = wd.first_name + ' ' + wd.last_name + ' (' + wd.affiliate_code + ')';
-    document.getElementById('modal_payment_method').textContent = 
-        wd.payment_method === 'bank_transfer' ? 'Banka Havalesi' : 
-        (wd.payment_method === 'papara' ? 'Papara' : 'PayPal');
-    document.getElementById('modal_payment_details').textContent = wd.payment_details || 'Bilgi yok';
-    document.getElementById('modal_notes').value = wd.admin_notes || '';
-    
-    // Show appropriate buttons based on status
-    if (wd.status === 'pending') {
-        document.getElementById('pending_actions').style.display = 'flex';
-        document.getElementById('processing_actions').style.display = 'none';
-    } else {
-        document.getElementById('pending_actions').style.display = 'none';
-        document.getElementById('processing_actions').style.display = 'flex';
-    }
-}
+    <div class="ck-suzgec">
+        <a href="affiliate-withdrawals.php" class="<?= $suzgec === '' ? 'secili' : '' ?>">Tümü</a>
+        <?php foreach ($durumlar as $kod => [$ad, , ]): ?>
+            <a href="?durum=<?= $kod ?>" class="<?= $suzgec === $kod ? 'secili' : '' ?>"><?= $ad ?></a>
+        <?php endforeach; ?>
+    </div>
 
-function closeModal() {
-    document.getElementById('processModal').classList.remove('active');
-}
+    <?php if (!$talepler): ?>
+        <div class="ck-kart">
+            <div class="empty-state">
+                <i class="fas fa-money-bill-transfer"></i>
+                <h3><?= $suzgec !== '' ? 'Bu durumda talep yok' : 'Henüz çekim talebi yok' ?></h3>
+                <p>Satış ortakları bakiyelerini çekmek istediğinde talepleri burada görünür.</p>
+            </div>
+        </div>
+    <?php else: ?>
+        <div class="ck-liste">
+            <?php foreach ($talepler as $t):
+                $id = (int) $t['id'];
+                $ad = trim((string) ($t['first_name'] ?? '') . ' ' . (string) ($t['last_name'] ?? ''));
+                [$durumAd, $durumSinif] = $durumlar[$t['status']] ?? [(string) $t['status'], 'badge'];
+                $islenebilir = in_array((string) $t['status'], ['pending', 'processing'], true);
+                ?>
+                <div class="ck-kart <?= $t['status'] === 'pending' ? 'bekliyor' : '' ?>">
+                    <div class="ck-bas">
+                        <span class="ck-tutar"><?= number_format((float) $t['amount'], 2, ',', '.') ?> ₺</span>
+                        <span class="ck-kim">
+                            <b><?= htmlspecialchars($ad !== '' ? $ad : 'Ortak bulunamadı') ?></b>
+                            <span>
+                                <?= htmlspecialchars((string) ($t['affiliate_code'] ?? '—')) ?>
+                                &middot; #<?= $id ?>
+                                &middot; <?= date('d.m.Y H:i', strtotime((string) $t['created_at'])) ?>
+                            </span>
+                        </span>
+                        <span class="badge <?= $durumSinif ?>"><?= $durumAd ?></span>
+                    </div>
 
-document.getElementById('processModal').addEventListener('click', function(e) {
-    if (e.target === this) closeModal();
-});
-</script>
+                    <div class="ck-govde">
+                        <div class="ck-alan">
+                            <b>Ödeme yöntemi</b>
+                            <span><?= htmlspecialchars((string) ($t['payment_method'] ?: '—')) ?></span>
+                        </div>
+                        <div class="ck-alan">
+                            <b>Ödeme bilgileri</b>
+                            <span><?= nl2br(htmlspecialchars((string) ($t['payment_details'] ?: '—'))) ?></span>
+                        </div>
+                        <div class="ck-alan">
+                            <b>Ortağın güncel bakiyesi</b>
+                            <span><?= number_format((float) ($t['balance'] ?? 0), 2, ',', '.') ?> ₺</span>
+                        </div>
+                        <?php if (!empty($t['email'])): ?>
+                            <div class="ck-alan">
+                                <b>E-posta</b>
+                                <span dir="ltr"><?= htmlspecialchars((string) $t['email']) ?></span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
 
-<?php include 'includes/footer.php'; ?>
+                    <?php if ($islenebilir): ?>
+                        <form method="post" class="ck-eylem">
+                            <?= Guvenlik::alan() ?>
+                            <input type="hidden" name="withdrawal_id" value="<?= $id ?>">
+                            <label for="not-<?= $id ?>">Yönetici notu (isteğe bağlı)</label>
+                            <textarea id="not-<?= $id ?>" name="admin_notes" maxlength="1000"
+                                placeholder="Havale dekont numarası, açıklama…"><?= htmlspecialchars((string) ($t['admin_notes'] ?? '')) ?></textarea>
+                            <div class="ck-dugmeler">
+                                <?php if ($t['status'] === 'pending'): ?>
+                                    <button type="submit" name="islem" value="islemealin" class="btn btn-sm btn-outline">
+                                        <i class="fas fa-hourglass-half"></i> İşleme al
+                                    </button>
+                                <?php endif; ?>
+                                <button type="submit" name="islem" value="reddet" class="btn btn-sm btn-danger"
+                                    onclick="return confirm(<?= htmlspecialchars(json_encode(
+                                        '#' . $id . ' reddedilecek ve ' . number_format((float) $t['amount'], 2, ',', '.')
+                                        . ' ₺ ortağın bakiyesine iade edilecek. Devam edilsin mi?',
+                                        JSON_UNESCAPED_UNICODE
+                                    ), ENT_QUOTES) ?>);">
+                                    <i class="fas fa-xmark"></i> Reddet
+                                </button>
+                                <button type="submit" name="islem" value="tamamla" class="btn btn-sm btn-primary"
+                                    onclick="return confirm(<?= htmlspecialchars(json_encode(
+                                        number_format((float) $t['amount'], 2, ',', '.')
+                                        . ' ₺ ödemesini yaptığınızı onaylıyor musunuz? Bu işlem geri alınamaz.',
+                                        JSON_UNESCAPED_UNICODE
+                                    ), ENT_QUOTES) ?>);">
+                                    <i class="fas fa-check"></i> Ödendi, tamamla
+                                </button>
+                            </div>
+                        </form>
+                    <?php else: ?>
+                        <div class="ck-kapali">
+                            <i class="fas fa-lock"></i>
+                            Bu talep <?= mb_strtolower($durumAd, 'UTF-8') ?> durumunda ve yeniden işlenemez.
+                            <?php if (!empty($t['processed_at'])): ?>
+                                <?= date('d.m.Y H:i', strtotime((string) $t['processed_at'])) ?>
+                                <?php if (!empty($t['islem_yapan'])): ?>
+                                    &middot; <?= htmlspecialchars((string) $t['islem_yapan']) ?>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            <?php if (!empty($t['admin_notes'])): ?>
+                                <div style="margin-top:6px; color:var(--y-metin-2);">
+                                    <?= nl2br(htmlspecialchars((string) $t['admin_notes'])) ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
 
+    <?php if ($sayfaSayisi > 1): ?>
+        <?php
+        $bag = static function (int $s) use ($suzgec): string {
+            $p = ['page' => $s];
+            if ($suzgec !== '') {
+                $p['durum'] = $suzgec;
+            }
+            return 'affiliate-withdrawals.php?' . http_build_query($p);
+        };
+        ?>
+        <div class="pagination">
+            <?php if ($sayfa > 1): ?>
+                <a href="<?= htmlspecialchars($bag($sayfa - 1)) ?>"><i class="fas fa-chevron-left"></i></a>
+            <?php endif; ?>
+            <?php for ($i = max(1, $sayfa - 2); $i <= min($sayfaSayisi, $sayfa + 2); $i++): ?>
+                <?php if ($i === $sayfa): ?>
+                    <span class="active"><?= $i ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars($bag($i)) ?>"><?= $i ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+            <?php if ($sayfa < $sayfaSayisi): ?>
+                <a href="<?= htmlspecialchars($bag($sayfa + 1)) ?>"><i class="fas fa-chevron-right"></i></a>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
+<?php endif; ?>
+
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

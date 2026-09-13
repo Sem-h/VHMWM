@@ -1,1235 +1,678 @@
 <?php
 /**
- * WHMVM Admin - Satış Ortaklığı Yönetimi
+ * VHM - Satış ortakları
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - Durum, komisyon ve not güncellemeleri POST ile çalışıyordu ama
+ *     CSRF belirteci doğrulanmıyordu.
+ *   - $_POST['status'] ve $_POST['commission_type'] enum dışı değer
+ *     kabul ediyordu.
+ *   - Komisyon oranında sınır yoktu; negatif ya da %1000 girilebiliyordu.
+ *   - PRG yoktu; yenilemede aynı güncelleme tekrar uygulanıyordu.
  */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
-require_once dirname(__DIR__) . '/includes/Settings.php';
-require_once dirname(__DIR__) . '/includes/Affiliate.php';
 require_once dirname(__DIR__) . '/includes/Guvenlik.php';
 Guvenlik::oturumBaslat();
 
-$pageTitle = 'Satış Ortaklığı';
+if (!isset($_SESSION['admin_id'])) {
+    header('Location: index.php');
+    exit;
+}
+
+$pageTitle = 'Satış ortakları';
 $currentPage = 'affiliates';
 
-// Tabloları kontrol et
-function ensureAffiliateTables() {
-    try {
-        Database::query("SELECT 1 FROM affiliates LIMIT 1");
-    } catch (Throwable $e) {
-        $sqlFile = dirname(__DIR__) . '/install/affiliate_tables.sql';
-        if (file_exists($sqlFile)) {
-            $sql = file_get_contents($sqlFile);
-            $statements = array_filter(array_map('trim', explode(';', $sql)));
-            foreach ($statements as $statement) {
-                if (!empty($statement) && !str_starts_with($statement, '--')) {
-                    try {
-                        Database::getInstance()->exec($statement);
-                    } catch (Throwable $ex) {}
-                }
-            }
-        }
-    }
-}
-ensureAffiliateTables();
-
-$message = '';
-$messageType = 'success';
-
-// İşlemler
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Durumu güncelle
-    if (isset($_POST['update_status'])) {
-        $affiliateId = (int)$_POST['affiliate_id'];
-        $newStatus = $_POST['status'];
-        
-        $approvedAt = $newStatus === 'active' ? date('Y-m-d H:i:s') : null;
-        $approvedBy = $newStatus === 'active' ? $_SESSION['admin_id'] : null;
-        
-        Database::query(
-            "UPDATE affiliates SET status = ?, approved_at = ?, approved_by = ? WHERE id = ?",
-            [$newStatus, $approvedAt, $approvedBy, $affiliateId]
-        );
-        
-        $message = 'Ortak durumu güncellendi.';
-    }
-    
-    // Komisyon oranını güncelle
-    if (isset($_POST['update_commission'])) {
-        $affiliateId = (int)$_POST['affiliate_id'];
-        $commissionRate = (float)$_POST['commission_rate'];
-        $commissionType = $_POST['commission_type'];
-        
-        Database::query(
-            "UPDATE affiliates SET commission_rate = ?, commission_type = ? WHERE id = ?",
-            [$commissionRate, $commissionType, $affiliateId]
-        );
-        
-        $message = 'Komisyon oranı güncellendi.';
-    }
-    
-    // Not ekle
-    if (isset($_POST['update_notes'])) {
-        $affiliateId = (int)$_POST['affiliate_id'];
-        $notes = $_POST['notes'];
-        
-        Database::query("UPDATE affiliates SET notes = ? WHERE id = ?", [$notes, $affiliateId]);
-        $message = 'Notlar güncellendi.';
-    }
-}
-
-// Filtreler
-$statusFilter = $_GET['status'] ?? '';
-$search = $_GET['search'] ?? '';
-
-$where = "WHERE 1=1";
-$params = [];
-
-if ($statusFilter) {
-    $where .= " AND a.status = ?";
-    $params[] = $statusFilter;
-}
-
-if ($search) {
-    $where .= " AND (c.first_name LIKE ? OR c.last_name LIKE ? OR c.email LIKE ? OR a.affiliate_code LIKE ?)";
-    $searchParam = "%$search%";
-    $params = array_merge($params, [$searchParam, $searchParam, $searchParam, $searchParam]);
-}
-
-// Sayfalama
-$page = max(1, (int)($_GET['page'] ?? 1));
-$perPage = 20;
-$offset = ($page - 1) * $perPage;
-
-$total = (int)Database::fetchColumn(
-    "SELECT COUNT(*) FROM affiliates a JOIN clients c ON a.client_id = c.id $where",
-    $params
-);
-$totalPages = (int)ceil($total / $perPage);
-
-$affiliates = Database::fetchAll(
-    "SELECT a.*, c.first_name, c.last_name, c.email
-     FROM affiliates a
-     JOIN clients c ON a.client_id = c.id
-     $where
-     ORDER BY a.created_at DESC
-     LIMIT $perPage OFFSET $offset",
-    $params
-);
-
-// İstatistikler
-$stats = [
-    'total' => (int)Database::fetchColumn("SELECT COUNT(*) FROM affiliates"),
-    'active' => (int)Database::fetchColumn("SELECT COUNT(*) FROM affiliates WHERE status = 'active'"),
-    'pending' => (int)Database::fetchColumn("SELECT COUNT(*) FROM affiliates WHERE status = 'pending'"),
-    'total_earnings' => (float)Database::fetchColumn("SELECT COALESCE(SUM(total_earnings), 0) FROM affiliates"),
-    'total_balance' => (float)Database::fetchColumn("SELECT COALESCE(SUM(balance), 0) FROM affiliates")
+/* affiliates.status enum'u ile birebir aynı */
+$durumlar = [
+    'pending' => ['Onay bekliyor', 'badge-warning'],
+    'active' => ['Etkin', 'badge-success'],
+    'suspended' => ['Askıda', 'badge-danger'],
+    'rejected' => ['Reddedildi', 'badge'],
 ];
 
-include 'includes/header.php';
+$komisyonTuru = [
+    'percentage' => 'Yüzde',
+    'fixed' => 'Sabit tutar',
+];
+
+/* Tablo yoksa sayfa çökmesin */
+$tabloVar = true;
+try {
+    Database::fetchColumn("SELECT 1 FROM affiliates LIMIT 1");
+} catch (Throwable $e) {
+    $tabloVar = false;
+    error_log('Satış ortağı tablosu okunamadı: ' . $e->getMessage());
+}
+
+function ortakMesaj(string $tip, string $metin): void
+{
+    $_SESSION['ortak_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: affiliates.php');
+    exit;
+}
+
+/* ---------- Durum ---------- */
+if ($tabloVar && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['durum_guncelle'])) {
+    Guvenlik::zorunlu();
+    $id = (int) ($_POST['affiliate_id'] ?? 0);
+    $yeni = (string) ($_POST['status'] ?? '');
+
+    if ($id <= 0 || !isset($durumlar[$yeni])) {
+        ortakMesaj('error', 'Geçersiz ortak durumu.');
+    }
+
+    try {
+        /* Onay bilgisi yalnızca etkinleştirmede yazılır, aksi hâlde temizlenir */
+        Database::query(
+            "UPDATE affiliates SET status = ?, approved_at = ?, approved_by = ? WHERE id = ?",
+            [
+                $yeni,
+                $yeni === 'active' ? date('Y-m-d H:i:s') : null,
+                $yeni === 'active' ? (int) $_SESSION['admin_id'] : null,
+                $id,
+            ]
+        );
+        ortakMesaj('success', 'Ortak durumu "' . $durumlar[$yeni][0] . '" olarak güncellendi.');
+    } catch (Throwable $e) {
+        error_log('Ortak durumu güncellenemedi: ' . $e->getMessage());
+        ortakMesaj('error', 'Durum güncellenemedi.');
+    }
+}
+
+/* ---------- Komisyon ---------- */
+if ($tabloVar && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['komisyon_guncelle'])) {
+    Guvenlik::zorunlu();
+    $id = (int) ($_POST['affiliate_id'] ?? 0);
+    $tur = (string) ($_POST['commission_type'] ?? '');
+    $oran = (float) str_replace(',', '.', (string) ($_POST['commission_rate'] ?? '0'));
+
+    if ($id <= 0 || !isset($komisyonTuru[$tur])) {
+        ortakMesaj('error', 'Geçersiz komisyon türü.');
+    }
+    /* Yüzde 0-100 arası olmalı; sabit tutarda üst sınır yok ama negatif olamaz */
+    if ($oran < 0) {
+        ortakMesaj('error', 'Komisyon değeri negatif olamaz.');
+    }
+    if ($tur === 'percentage' && $oran > 100) {
+        ortakMesaj('error', 'Yüzde komisyon 100\'den büyük olamaz.');
+    }
+
+    try {
+        Database::query(
+            "UPDATE affiliates SET commission_rate = ?, commission_type = ? WHERE id = ?",
+            [round($oran, 2), $tur, $id]
+        );
+        ortakMesaj('success', 'Komisyon güncellendi.');
+    } catch (Throwable $e) {
+        error_log('Komisyon güncellenemedi: ' . $e->getMessage());
+        ortakMesaj('error', 'Komisyon güncellenemedi.');
+    }
+}
+
+/* ---------- Not ---------- */
+if ($tabloVar && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['not_guncelle'])) {
+    Guvenlik::zorunlu();
+    $id = (int) ($_POST['affiliate_id'] ?? 0);
+    $not = mb_substr(trim((string) ($_POST['notes'] ?? '')), 0, 2000);
+
+    try {
+        Database::query("UPDATE affiliates SET notes = ? WHERE id = ?", [$not !== '' ? $not : null, $id]);
+        ortakMesaj('success', 'Not kaydedildi.');
+    } catch (Throwable $e) {
+        error_log('Ortak notu kaydedilemedi: ' . $e->getMessage());
+        ortakMesaj('error', 'Not kaydedilemedi.');
+    }
+}
+
+$mesaj = null;
+if (!empty($_SESSION['ortak_mesaj'])) {
+    $mesaj = $_SESSION['ortak_mesaj'];
+    unset($_SESSION['ortak_mesaj']);
+}
+
+/* ---------- Veriler ---------- */
+$suzgec = (string) ($_GET['status'] ?? '');
+$arama = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+$sayfa = max(1, (int) ($_GET['page'] ?? 1));
+$adet = 20;
+
+$ortaklar = [];
+$toplam = 0;
+$sayfaSayisi = 1;
+$ozet = [];
+$bekleyenCekim = 0;
+
+if ($tabloVar) {
+    $kosul = [];
+    $par = [];
+    if (isset($durumlar[$suzgec])) {
+        $kosul[] = "a.status = ?";
+        $par[] = $suzgec;
+    }
+    if ($arama !== '') {
+        $kosul[] = "(c.first_name LIKE ? OR c.last_name LIKE ? OR c.email LIKE ? OR a.affiliate_code LIKE ?)";
+        $desen = '%' . str_replace(['%', '_'], ['\%', '\_'], $arama) . '%';
+        $par = array_merge($par, array_fill(0, 4, $desen));
+    }
+    $nerede = $kosul ? ' WHERE ' . implode(' AND ', $kosul) : '';
+    $atla = ($sayfa - 1) * $adet;
+
+    $guvenli = static function (string $sql, array $p = []): float {
+        try {
+            return (float) Database::fetchColumn($sql, $p);
+        } catch (Throwable $e) {
+            error_log('Ortak sorgusu: ' . $e->getMessage());
+            return 0;
+        }
+    };
+
+    $toplam = (int) $guvenli(
+        "SELECT COUNT(*) FROM affiliates a LEFT JOIN clients c ON c.id = a.client_id" . $nerede,
+        $par
+    );
+    $sayfaSayisi = max(1, (int) ceil($toplam / $adet));
+
+    try {
+        $ortaklar = Database::fetchAll(
+            "SELECT a.*, c.first_name, c.last_name, c.email
+               FROM affiliates a
+               LEFT JOIN clients c ON c.id = a.client_id
+               {$nerede}
+              ORDER BY a.created_at DESC
+              LIMIT {$adet} OFFSET {$atla}",
+            $par
+        );
+    } catch (Throwable $e) {
+        error_log('Ortak listesi okunamadı: ' . $e->getMessage());
+        $ortaklar = [];
+    }
+
+    $ozet = [
+        ['Tüm ortaklar', $guvenli("SELECT COUNT(*) FROM affiliates"), 'fa-handshake', '', false],
+        ['Onay bekleyen', $guvenli("SELECT COUNT(*) FROM affiliates WHERE status = 'pending'"), 'fa-clock', 'pending', false],
+        ['Etkin', $guvenli("SELECT COUNT(*) FROM affiliates WHERE status = 'active'"), 'fa-circle-check', 'active', false],
+        ['Ödenecek bakiye', $guvenli("SELECT COALESCE(SUM(balance),0) FROM affiliates"), 'fa-wallet', '', true],
+    ];
+
+    $bekleyenCekim = (int) $guvenli(
+        "SELECT COUNT(*) FROM affiliate_withdrawals WHERE status IN ('pending','processing')"
+    );
+}
+
+require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* ===== Affiliate Admin Page - Modern Design ===== */
-
-/* Page Header */
-.page-header-card {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-    border-radius: 20px;
-    padding: 32px;
-    margin-bottom: 28px;
-    position: relative;
-    overflow: hidden;
-    box-shadow: 0 10px 40px rgba(99, 102, 241, 0.3);
-}
-
-.page-header-card::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -20%;
-    width: 400px;
-    height: 400px;
-    background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
-    animation: pulse-glow 8s ease-in-out infinite;
-}
-
-.page-header-card::after {
-    content: '🤝';
-    position: absolute;
-    right: 40px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 80px;
-    opacity: 0.15;
-}
-
-@keyframes pulse-glow {
-    0%, 100% { transform: scale(1); opacity: 0.15; }
-    50% { transform: scale(1.1); opacity: 0.2; }
-}
-
-.page-header-content {
-    position: relative;
-    z-index: 1;
-}
-
-.page-header-card h1 {
-    color: white;
-    font-size: 28px;
-    font-weight: 700;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.page-header-card p {
-    color: rgba(255,255,255,0.85);
-    font-size: 15px;
-    max-width: 500px;
-}
-
-/* Stats Grid */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 20px;
-    margin-bottom: 28px;
-}
-
-@media (max-width: 1200px) {
-    .stats-grid { grid-template-columns: repeat(3, 1fr); }
-}
-
-@media (max-width: 768px) {
-    .stats-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-.stat-card {
-    background: var(--y-yuzey);
-    border-radius: 16px;
-    padding: 24px;
-    position: relative;
-    overflow: hidden;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-    transition: all 0.3s ease;
-    border: 1px solid rgba(0,0,0,0.04);
-}
-
-.stat-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 12px 35px rgba(0,0,0,0.1);
-}
-
-.stat-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-}
-
-.stat-card.purple::before { background: linear-gradient(90deg, #8b5cf6, #a855f7); }
-.stat-card.green::before { background: linear-gradient(90deg, #10b981, #34d399); }
-.stat-card.yellow::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-.stat-card.blue::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
-.stat-card.pink::before { background: linear-gradient(90deg, #ec4899, #f472b6); }
-
-.stat-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    margin-bottom: 16px;
-}
-
-.stat-card.purple .stat-icon { background: linear-gradient(135deg, #ede9fe, #ddd6fe); }
-.stat-card.green .stat-icon { background: linear-gradient(135deg, #d1fae5, #a7f3d0); }
-.stat-card.yellow .stat-icon { background: linear-gradient(135deg, #fef3c7, #fde68a); }
-.stat-card.blue .stat-icon { background: linear-gradient(135deg, #dbeafe, #bfdbfe); }
-.stat-card.pink .stat-icon { background: linear-gradient(135deg, #fce7f3, #fbcfe8); }
-
-.stat-value {
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--dark);
-    margin-bottom: 4px;
-    letter-spacing: -0.5px;
-}
-
-.stat-label {
-    font-size: 13px;
-    color: var(--gray);
-    font-weight: 500;
-}
-
-/* Search & Filter Card */
-.filter-card {
-    background: var(--y-yuzey);
-    border-radius: 16px;
-    padding: 24px;
-    margin-bottom: 24px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-}
-
-.search-box {
-    position: relative;
-    flex: 1;
-    min-width: 280px;
-}
-
-.search-box input {
-    width: 100%;
-    padding: 14px 20px 14px 48px;
-    border: 2px solid var(--y-cizgi);
-    border-radius: 12px;
-    font-size: 14px;
-    transition: all 0.3s;
-    background: var(--y-yuzey-2);
-}
-
-.search-box input:focus {
-    outline: none;
-    border-color: var(--primary);
-    background: var(--y-yuzey);
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
-}
-
-.search-box::before {
-    content: '🔍';
-    position: absolute;
-    left: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 18px;
-}
-
-.filter-select {
-    padding: 14px 20px;
-    border: 2px solid var(--y-cizgi);
-    border-radius: 12px;
-    font-size: 14px;
-    background: var(--y-yuzey-2);
-    cursor: pointer;
-    min-width: 180px;
-    transition: all 0.3s;
-}
-
-.filter-select:focus {
-    outline: none;
-    border-color: var(--primary);
-    background: var(--y-yuzey);
-}
-
-.btn {
-    padding: 14px 24px;
-    border: none;
-    border-radius: 12px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.3s;
-    text-decoration: none;
-}
-
-.btn-primary {
-    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
-    color: white;
-    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
-}
-
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
-}
-
-.btn-success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-}
-
-.btn-outline {
-    background: var(--y-yuzey);
-    border: 2px solid var(--y-cizgi);
-    color: var(--dark);
-}
-
-.btn-outline:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-    background: rgba(99, 102, 241, 0.05);
-}
-
-.btn-sm {
-    padding: 10px 16px;
-    font-size: 13px;
-}
-
-/* Data Table */
-.table-card {
-    background: var(--y-yuzey);
-    border-radius: 16px;
-    overflow: hidden;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-}
-
-.table-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--y-cizgi);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.table-header h3 {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--dark);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.table-header .count {
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.data-table {
-    width: 100%;
-}
-
-.data-table table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.data-table th {
-    text-align: left;
-    padding: 16px 20px;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--y-metin-3);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    background: var(--y-yuzey-2);
-    border-bottom: 2px solid var(--y-cizgi);
-}
-
-.data-table td {
-    padding: 18px 20px;
-    border-bottom: 1px solid var(--y-cizgi-soft);
-    font-size: 14px;
-    vertical-align: middle;
-}
-
-.data-table tr {
-    transition: all 0.2s;
-}
-
-.data-table tbody tr:hover {
-    background: linear-gradient(90deg, rgba(99, 102, 241, 0.03) 0%, rgba(139, 92, 246, 0.03) 100%);
-}
-
-.data-table tbody tr:last-child td {
-    border-bottom: none;
-}
-
-/* User Cell */
-.user-cell {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-}
-
-.user-avatar {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: 700;
-    font-size: 16px;
-    flex-shrink: 0;
-}
-
-.user-info strong {
-    display: block;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--dark);
-    margin-bottom: 2px;
-}
-
-.user-info small {
-    font-size: 12px;
-    color: var(--gray);
-}
-
-/* Code Badge */
-.code-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: linear-gradient(135deg, var(--y-yuzey-2), var(--y-cizgi));
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-family: 'Monaco', 'Consolas', monospace;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--y-metin-2);
-}
-
-.code-badge::before {
-    content: '🔗';
-    font-size: 12px;
-}
-
-/* Commission Badge */
-.commission-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 12px;
-    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-    border-radius: 8px;
-    font-weight: 700;
-    color: #1e40af;
-    font-size: 14px;
-}
-
-/* Stat Mini */
-.stat-mini {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
-    color: var(--dark);
-}
-
-.stat-mini.green { color: #059669; }
-
-/* Badge */
-.badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.badge::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-}
-
-.badge-success { background: #d1fae5; color: #059669; }
-.badge-success::before { background: #059669; }
-
-.badge-warning { background: #fef3c7; color: #d97706; }
-.badge-warning::before { background: #d97706; }
-
-.badge-danger { background: #fee2e2; color: #dc2626; }
-.badge-danger::before { background: #dc2626; }
-
-.badge-gray { background: var(--y-yuzey-2); color: var(--y-metin-3); }
-.badge-gray::before { background: #64748b; }
-
-/* Alert */
-.alert {
-    padding: 16px 20px;
-    border-radius: 12px;
-    margin-bottom: 24px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-weight: 500;
-    animation: slideDown 0.3s ease;
-}
-
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.alert-success {
-    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
-    color: #065f46;
-    border-left: 4px solid #10b981;
-}
-
-.alert-danger {
-    background: linear-gradient(135deg, #fee2e2, #fecaca);
-    color: #991b1b;
-    border-left: 4px solid #ef4444;
-}
-
-/* Empty State */
-.empty-state {
-    text-align: center;
-    padding: 80px 40px;
-    background: var(--y-yuzey);
-    border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-}
-
-.empty-icon {
-    width: 100px;
-    height: 100px;
-    background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 48px;
-    margin: 0 auto 24px;
-}
-
-.empty-state h3 {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--dark);
-    margin-bottom: 8px;
-}
-
-.empty-state p {
-    color: var(--gray);
-    font-size: 15px;
-    max-width: 400px;
-    margin: 0 auto;
-}
-
-/* Pagination */
-.pagination-wrapper {
-    display: flex;
-    justify-content: center;
-    padding: 24px;
-    border-top: 1px solid var(--y-cizgi-soft);
-}
-
-.pagination {
-    display: flex;
-    gap: 6px;
-}
-
-.pagination a {
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--y-yuzey);
-    border: 2px solid var(--y-cizgi);
-    border-radius: 10px;
-    color: var(--dark);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 14px;
-    transition: all 0.2s;
-}
-
-.pagination a:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.pagination a.active {
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
-    color: white;
-    border-color: transparent;
-}
-
-/* Modal */
-.modal {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(4px);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-.modal.active { display: flex; }
-
-.modal-content {
-    background: var(--y-yuzey);
-    border-radius: 20px;
-    width: 100%;
-    max-width: 600px;
-    max-height: 90vh;
-    overflow-y: auto;
-    box-shadow: 0 25px 60px rgba(0,0,0,0.3);
-    animation: slideUp 0.3s ease;
-}
-
-@keyframes slideUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.modal-header {
-    padding: 24px;
-    border-bottom: 1px solid var(--y-cizgi);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
-}
-
-.modal-header h3 {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--dark);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.modal-close {
-    width: 36px;
-    height: 36px;
-    background: var(--y-yuzey-2);
-    border: none;
-    border-radius: 10px;
-    font-size: 20px;
-    cursor: pointer;
-    color: var(--gray);
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.modal-close:hover {
-    background: #fee2e2;
-    color: #ef4444;
-}
-
-.modal-body { padding: 24px; }
-
-/* Modal Stats */
-.modal-user {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 20px;
-    background: linear-gradient(135deg, var(--y-yuzey-2), var(--y-yuzey-2));
-    border-radius: 14px;
-    margin-bottom: 24px;
-}
-
-.modal-user-avatar {
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: 700;
-    font-size: 22px;
-}
-
-.modal-user-info h4 {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--dark);
-    margin-bottom: 4px;
-}
-
-.modal-user-info p {
-    font-size: 14px;
-    color: var(--gray);
-}
-
-.info-cards {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin-bottom: 24px;
-}
-
-.info-card {
-    background: var(--y-yuzey-2);
-    padding: 16px;
-    border-radius: 12px;
-    text-align: center;
-    border: 1px solid var(--y-cizgi);
-}
-
-.info-card label {
-    font-size: 11px;
-    color: var(--gray);
-    display: block;
-    margin-bottom: 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-weight: 600;
-}
-
-.info-card span {
-    font-size: 22px;
-    font-weight: 800;
-    color: var(--dark);
-}
-
-/* Form Sections */
-.form-section {
-    background: var(--y-yuzey-2);
-    border-radius: 14px;
-    padding: 20px;
-    margin-bottom: 20px;
-    border: 1px solid var(--y-cizgi);
-}
-
-.form-section-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--dark);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.form-group {
-    margin-bottom: 16px;
-}
-
-.form-group:last-child {
-    margin-bottom: 0;
-}
-
-.form-group label {
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 8px;
-    color: var(--y-metin-2);
-}
-
-.form-control {
-    width: 100%;
-    padding: 12px 16px;
-    border: 2px solid var(--y-cizgi);
-    border-radius: 10px;
-    font-size: 14px;
-    transition: all 0.2s;
-    background: var(--y-yuzey);
-}
-
-.form-control:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
-}
-
-textarea.form-control {
-    min-height: 80px;
-    resize: vertical;
-}
-
-/* Payment Info */
-.payment-info {
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
-    border-radius: 14px;
-    padding: 20px;
-    border: 1px solid #fcd34d;
-}
-
-.payment-info h5 {
-    font-size: 14px;
-    font-weight: 700;
-    color: #92400e;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.payment-info p {
-    font-size: 14px;
-    color: #78350f;
-    margin-bottom: 8px;
-}
-
-.payment-details-box {
-    background: var(--y-yuzey);
-    border-radius: 10px;
-    padding: 14px;
-    font-size: 13px;
-    color: var(--y-metin-2);
-    white-space: pre-wrap;
-    font-family: inherit;
-    border: 1px solid rgba(0,0,0,0.1);
-}
+    /* ==========================================
+       Satış ortakları - or
+       ========================================== */
+    .or-ozet {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+    }
+
+    .or-ozet-kart {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 17px;
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        color: var(--y-metin-2);
+        transition: border-color .15s;
+    }
+
+    .or-ozet-kart:hover {
+        border-color: var(--y-primary);
+        text-decoration: none;
+    }
+
+    .or-ozet-kart.secili {
+        border-color: var(--y-primary);
+        background: var(--y-primary-soft);
+    }
+
+    .or-ozet-ikon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 9px;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 15px;
+    }
+
+    .or-ozet-kart b {
+        display: block;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--y-metin);
+        line-height: 1.2;
+    }
+
+    .or-ozet-kart span {
+        font-size: 12.5px;
+        color: var(--y-metin-3);
+    }
+
+    .or-arac {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .or-ara {
+        position: relative;
+        flex: 1;
+        min-width: 220px;
+        max-width: 420px;
+    }
+
+    .or-ara i {
+        position: absolute;
+        left: 13px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 13px;
+        color: var(--y-metin-3);
+        pointer-events: none;
+    }
+
+    .or-ara input {
+        width: 100%;
+        padding-left: 36px;
+    }
+
+    /* Kart listesi */
+    .or-liste {
+        display: grid;
+        gap: 14px;
+    }
+
+    .or-kart {
+        border: 1px solid var(--y-cizgi);
+        border-radius: var(--y-r);
+        background: var(--y-yuzey);
+        box-shadow: var(--y-golge);
+        overflow: hidden;
+    }
+
+    .or-kart-bas {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 14px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--y-cizgi);
+        background: var(--y-yuzey-2);
+    }
+
+    .or-avatar {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 50%;
+        background: var(--y-primary-soft);
+        color: var(--y-primary);
+        font-size: 14px;
+        font-weight: 700;
+    }
+
+    .or-kim {
+        flex: 1;
+        min-width: 180px;
+    }
+
+    .or-kim b {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--y-metin);
+    }
+
+    .or-kim a {
+        font-size: 12px;
+        color: var(--y-metin-3);
+    }
+
+    .or-kim a:hover {
+        color: var(--y-primary);
+    }
+
+    .or-kod {
+        padding: 4px 11px;
+        border: 1px dashed var(--y-cizgi);
+        border-radius: var(--y-r-sm);
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 12.5px;
+        color: var(--y-metin-2);
+    }
+
+    /* Sayısal şerit */
+    .or-sayilar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 1px;
+        background: var(--y-cizgi);
+    }
+
+    .or-sayi {
+        padding: 13px 18px;
+        background: var(--y-yuzey);
+    }
+
+    .or-sayi b {
+        display: block;
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--y-metin);
+        line-height: 1.25;
+    }
+
+    .or-sayi span {
+        font-size: 11.5px;
+        color: var(--y-metin-3);
+    }
+
+    /* Yönetim bölümü */
+    .or-yonet {
+        padding: 16px 18px;
+        border-top: 1px solid var(--y-cizgi);
+    }
+
+    .or-form-satir {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 12px;
+    }
+
+    .or-alan label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--y-metin-3);
+    }
+
+    .or-alan select,
+    .or-alan input {
+        width: auto;
+        min-width: 128px;
+        padding: 7px 10px;
+        font-size: 12.5px;
+    }
+
+    .or-not {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--y-cizgi-soft);
+    }
+
+    .or-not textarea {
+        min-height: 62px;
+        font-size: 12.5px;
+    }
+
+    .or-not-alt {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 9px;
+    }
+
+    .or-uyari {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 18px;
+        padding: 12px 16px;
+        border: 1px solid color-mix(in srgb, var(--y-warning) 40%, transparent);
+        border-left-width: 4px;
+        border-radius: var(--y-r-sm);
+        background: color-mix(in srgb, var(--y-warning) 8%, var(--y-yuzey));
+        font-size: 13.5px;
+        color: var(--y-metin);
+    }
+
+    .or-uyari i {
+        color: var(--y-warning);
+    }
+
+    .or-uyari a {
+        margin-left: auto;
+    }
 </style>
 
-<?php if ($message): ?>
-<div class="alert alert-<?= $messageType ?>">
-    <span>✓</span> <?= htmlspecialchars($message) ?>
+<div class="page-header">
+    <div>
+        <h1>Satış ortakları</h1>
+        <p><?= number_format($toplam, 0, ',', '.') ?> kayıt<?= $arama !== '' || $suzgec !== '' ? ' (süzülmüş)' : '' ?></p>
+    </div>
 </div>
+
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= $mesaj['tip'] === 'success' ? 'success' : 'error' ?>">
+        <i class="fas fa-<?= $mesaj['tip'] === 'success' ? 'circle-check' : 'circle-exclamation' ?> alert-icon"></i>
+        <span><?= htmlspecialchars((string) $mesaj['metin']) ?></span>
+    </div>
 <?php endif; ?>
 
-<!-- Page Header -->
-<div class="page-header-card">
-    <div class="page-header-content">
-        <h1>🤝 Satış Ortaklığı Yönetimi</h1>
-        <p>Satış ortaklarınızı yönetin, komisyon oranlarını ayarlayın ve performanslarını takip edin.</p>
+<?php if (!$tabloVar): ?>
+    <div class="alert alert-error">
+        <i class="fas fa-circle-exclamation alert-icon"></i>
+        <span>Satış ortaklığı tabloları bulunamadı. Kurulum dosyasını içe aktarmanız gerekiyor.</span>
     </div>
-</div>
-
-<!-- Stats -->
-<div class="stats-grid">
-    <div class="stat-card purple">
-        <div class="stat-icon">🤝</div>
-        <div class="stat-value"><?= number_format($stats['total']) ?></div>
-        <div class="stat-label">Toplam Ortak</div>
-    </div>
-    <div class="stat-card green">
-        <div class="stat-icon">✓</div>
-        <div class="stat-value"><?= number_format($stats['active']) ?></div>
-        <div class="stat-label">Aktif Ortak</div>
-    </div>
-    <div class="stat-card yellow">
-        <div class="stat-icon">⏳</div>
-        <div class="stat-value"><?= number_format($stats['pending']) ?></div>
-        <div class="stat-label">Onay Bekleyen</div>
-    </div>
-    <div class="stat-card blue">
-        <div class="stat-icon">💰</div>
-        <div class="stat-value"><?= number_format($stats['total_earnings'], 0) ?>₺</div>
-        <div class="stat-label">Toplam Kazanç</div>
-    </div>
-    <div class="stat-card pink">
-        <div class="stat-icon">💵</div>
-        <div class="stat-value"><?= number_format($stats['total_balance'], 0) ?>₺</div>
-        <div class="stat-label">Bekleyen Bakiye</div>
-    </div>
-</div>
-
-<!-- Filters -->
-<form method="GET" class="filter-card">
-    <div class="search-box">
-        <input type="text" name="search" placeholder="İsim, email veya referans kodu ara..." value="<?= htmlspecialchars($search) ?>">
-    </div>
-    <select name="status" class="filter-select">
-        <option value="">Tüm Durumlar</option>
-        <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>⏳ Onay Bekliyor</option>
-        <option value="active" <?= $statusFilter === 'active' ? 'selected' : '' ?>>✓ Aktif</option>
-        <option value="suspended" <?= $statusFilter === 'suspended' ? 'selected' : '' ?>>⏸️ Askıda</option>
-        <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>✕ Reddedildi</option>
-    </select>
-    <button type="submit" class="btn btn-primary">🔍 Filtrele</button>
-    <?php if ($search || $statusFilter): ?>
-        <a href="affiliates.php" class="btn btn-outline">✕ Temizle</a>
-    <?php endif; ?>
-</form>
-
-<!-- Affiliates Table -->
-<?php if (empty($affiliates)): ?>
-<div class="empty-state">
-    <div class="empty-icon">🤝</div>
-    <h3>Satış ortağı bulunamadı</h3>
-    <p>Henüz satış ortaklığı başvurusu yok veya filtreleme sonucu eşleşen kayıt bulunamadı.</p>
-</div>
 <?php else: ?>
-<div class="table-card">
-    <div class="table-header">
-        <h3>📋 Satış Ortakları</h3>
-        <span class="count"><?= number_format($total) ?> Kayıt</span>
-    </div>
-    <div class="data-table">
-        <table>
-            <thead>
-                <tr>
-                    <th>Ortak</th>
-                    <th>Referans Kodu</th>
-                    <th>Komisyon</th>
-                    <th>Ziyaret</th>
-                    <th>Kayıt</th>
-                    <th>Sipariş</th>
-                    <th>Kazanç</th>
-                    <th>Bakiye</th>
-                    <th>Durum</th>
-                    <th style="text-align: center;">İşlem</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($affiliates as $aff): ?>
-                <tr>
-                    <td>
-                        <div class="user-cell">
-                            <div class="user-avatar">
-                                <?= strtoupper(substr($aff['first_name'], 0, 1) . substr($aff['last_name'], 0, 1)) ?>
-                            </div>
-                            <div class="user-info">
-                                <strong><?= htmlspecialchars($aff['first_name'] . ' ' . $aff['last_name']) ?></strong>
-                                <small><?= htmlspecialchars($aff['email']) ?></small>
-                            </div>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="code-badge"><?= htmlspecialchars($aff['affiliate_code']) ?></span>
-                    </td>
-                    <td>
-                        <span class="commission-badge">%<?= number_format((float)$aff['commission_rate'], 0) ?></span>
-                    </td>
-                    <td><span class="stat-mini">👁️ <?= number_format((int)$aff['total_visits']) ?></span></td>
-                    <td><span class="stat-mini">👤 <?= number_format((int)$aff['total_signups']) ?></span></td>
-                    <td><span class="stat-mini">🛒 <?= number_format((int)$aff['total_orders']) ?></span></td>
-                    <td><span class="stat-mini">💰 <?= number_format((float)$aff['total_earnings'], 0) ?>₺</span></td>
-                    <td><span class="stat-mini green">💵 <?= number_format((float)$aff['balance'], 0) ?>₺</span></td>
-                    <td>
-                        <?php 
-                        $badgeClass = match($aff['status']) {
-                            'active' => 'success',
-                            'pending' => 'warning',
-                            'suspended' => 'gray',
-                            'rejected' => 'danger',
-                            default => 'gray'
-                        };
-                        $statusText = match($aff['status']) {
-                            'active' => 'Aktif',
-                            'pending' => 'Beklemede',
-                            'suspended' => 'Askıda',
-                            'rejected' => 'Reddedildi',
-                            default => $aff['status']
-                        };
-                        ?>
-                        <span class="badge badge-<?= $badgeClass ?>"><?= $statusText ?></span>
-                    </td>
-                    <td style="text-align: center;">
-                        <button class="btn btn-primary btn-sm" onclick="openAffiliateModal(<?= (int)$aff['id'] ?>)">
-                            ⚙️ Yönet
-                        </button>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-    
-    <?php if ($totalPages > 1): ?>
-    <div class="pagination-wrapper">
-        <div class="pagination">
-            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>&status=<?= $statusFilter ?>" 
-                   class="<?= $i === $page ? 'active' : '' ?>"><?= $i ?></a>
-            <?php endfor; ?>
+
+    <?php if ($bekleyenCekim > 0): ?>
+        <div class="or-uyari">
+            <i class="fas fa-money-bill-transfer"></i>
+            <span><strong><?= $bekleyenCekim ?></strong> çekim talebi işlem bekliyor.</span>
+            <a href="affiliate-withdrawals.php" class="btn btn-sm btn-outline">Çekim taleplerine git</a>
         </div>
-    </div>
     <?php endif; ?>
-</div>
+
+    <div class="or-ozet">
+        <?php foreach ($ozet as [$ad, $deger, $ikon, $filtre, $paraMi]): ?>
+            <a class="or-ozet-kart <?= $filtre !== '' && $suzgec === $filtre ? 'secili' : '' ?>"
+                href="affiliates.php<?= $filtre !== '' ? '?status=' . $filtre : '' ?>">
+                <span class="or-ozet-ikon"><i class="fas <?= $ikon ?>"></i></span>
+                <span>
+                    <b><?= $paraMi
+                        ? number_format($deger, 2, ',', '.') . ' ₺'
+                        : number_format($deger, 0, ',', '.') ?></b>
+                    <span><?= $ad ?></span>
+                </span>
+            </a>
+        <?php endforeach; ?>
+    </div>
+
+    <form class="or-arac" method="get">
+        <?php if ($suzgec !== ''): ?>
+            <input type="hidden" name="status" value="<?= htmlspecialchars($suzgec) ?>">
+        <?php endif; ?>
+        <div class="or-ara">
+            <i class="fas fa-magnifying-glass"></i>
+            <input type="search" name="q" value="<?= htmlspecialchars($arama) ?>"
+                placeholder="Ad, e-posta veya ortak kodu…">
+        </div>
+        <div style="display:flex; gap:8px;">
+            <button type="submit" class="btn btn-outline"><i class="fas fa-filter"></i> Ara</button>
+            <?php if ($arama !== '' || $suzgec !== ''): ?>
+                <a href="affiliates.php" class="btn btn-outline"><i class="fas fa-xmark"></i> Sıfırla</a>
+            <?php endif; ?>
+        </div>
+    </form>
+
+    <?php if (!$ortaklar): ?>
+        <div class="or-kart">
+            <div class="empty-state">
+                <i class="fas fa-handshake"></i>
+                <h3><?= $arama !== '' || $suzgec !== '' ? 'Eşleşen ortak yok' : 'Henüz satış ortağı yok' ?></h3>
+                <p><?= $arama !== '' || $suzgec !== ''
+                    ? 'Aramayı değiştirin ya da süzgeci sıfırlayın.'
+                    : 'Müşteriler panelden başvurduğunda burada listelenir.' ?></p>
+            </div>
+        </div>
+    <?php else: ?>
+        <div class="or-liste">
+            <?php foreach ($ortaklar as $o):
+                $id = (int) $o['id'];
+                $ad = trim((string) ($o['first_name'] ?? '') . ' ' . (string) ($o['last_name'] ?? ''));
+                $bas = mb_strtoupper(mb_substr($ad !== '' ? $ad : '?', 0, 1), 'UTF-8');
+                [$durumAd, $durumSinif] = $durumlar[$o['status']] ?? [(string) $o['status'], 'badge'];
+                $donusum = ((int) $o['total_visits']) > 0
+                    ? ((int) $o['total_orders'] / (int) $o['total_visits']) * 100
+                    : null;
+                ?>
+                <div class="or-kart">
+                    <div class="or-kart-bas">
+                        <span class="or-avatar"><?= htmlspecialchars($bas) ?></span>
+                        <span class="or-kim">
+                            <b><?= htmlspecialchars($ad !== '' ? $ad : 'Müşteri silinmiş') ?></b>
+                            <?php if (!empty($o['email'])): ?>
+                                <a href="client-view.php?id=<?= (int) $o['client_id'] ?>" dir="ltr">
+                                    <?= htmlspecialchars((string) $o['email']) ?>
+                                </a>
+                            <?php endif; ?>
+                        </span>
+                        <span class="or-kod"><?= htmlspecialchars((string) $o['affiliate_code']) ?></span>
+                        <span class="badge <?= $durumSinif ?>"><?= $durumAd ?></span>
+                    </div>
+
+                    <div class="or-sayilar">
+                        <div class="or-sayi">
+                            <b><?= number_format((int) $o['total_visits'], 0, ',', '.') ?></b>
+                            <span>Ziyaret</span>
+                        </div>
+                        <div class="or-sayi">
+                            <b><?= number_format((int) $o['total_signups'], 0, ',', '.') ?></b>
+                            <span>Kayıt</span>
+                        </div>
+                        <div class="or-sayi">
+                            <b><?= number_format((int) $o['total_orders'], 0, ',', '.') ?></b>
+                            <span>Sipariş<?= $donusum !== null ? ' · %' . number_format($donusum, 1, ',', '.') : '' ?></span>
+                        </div>
+                        <div class="or-sayi">
+                            <b><?= number_format((float) $o['total_earnings'], 2, ',', '.') ?> ₺</b>
+                            <span>Toplam kazanç</span>
+                        </div>
+                        <div class="or-sayi">
+                            <b><?= number_format((float) $o['total_withdrawn'], 2, ',', '.') ?> ₺</b>
+                            <span>Çekilen</span>
+                        </div>
+                        <div class="or-sayi">
+                            <b style="color:var(--y-primary)"><?= number_format((float) $o['balance'], 2, ',', '.') ?> ₺</b>
+                            <span>Bakiye</span>
+                        </div>
+                    </div>
+
+                    <div class="or-yonet">
+                        <div class="or-form-satir">
+                            <form method="post" class="or-form-satir" style="gap:9px;">
+                                <?= Guvenlik::alan() ?>
+                                <input type="hidden" name="durum_guncelle" value="1">
+                                <input type="hidden" name="affiliate_id" value="<?= $id ?>">
+                                <div class="or-alan">
+                                    <label>Durum</label>
+                                    <select name="status">
+                                        <?php foreach ($durumlar as $kod => [$etiket, ]): ?>
+                                            <option value="<?= $kod ?>" <?= $o['status'] === $kod ? 'selected' : '' ?>>
+                                                <?= $etiket ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-outline">Kaydet</button>
+                            </form>
+
+                            <form method="post" class="or-form-satir" style="gap:9px;">
+                                <?= Guvenlik::alan() ?>
+                                <input type="hidden" name="komisyon_guncelle" value="1">
+                                <input type="hidden" name="affiliate_id" value="<?= $id ?>">
+                                <div class="or-alan">
+                                    <label>Komisyon türü</label>
+                                    <select name="commission_type">
+                                        <?php foreach ($komisyonTuru as $kod => $etiket): ?>
+                                            <option value="<?= $kod ?>" <?= $o['commission_type'] === $kod ? 'selected' : '' ?>>
+                                                <?= $etiket ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="or-alan">
+                                    <label>Değer</label>
+                                    <input type="number" name="commission_rate" step="0.01" min="0" max="100000"
+                                        value="<?= number_format((float) $o['commission_rate'], 2, '.', '') ?>"
+                                        style="min-width:100px">
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-outline">Kaydet</button>
+                            </form>
+                        </div>
+
+                        <form method="post" class="or-not">
+                            <?= Guvenlik::alan() ?>
+                            <input type="hidden" name="not_guncelle" value="1">
+                            <input type="hidden" name="affiliate_id" value="<?= $id ?>">
+                            <label for="not-<?= $id ?>">Yönetici notu</label>
+                            <textarea id="not-<?= $id ?>" name="notes" maxlength="2000"
+                                placeholder="Bu ortakla ilgili iç not…"><?= htmlspecialchars((string) ($o['notes'] ?? '')) ?></textarea>
+                            <div class="or-not-alt">
+                                <button type="submit" class="btn btn-sm btn-outline">Notu kaydet</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($sayfaSayisi > 1): ?>
+        <?php
+        $bag = static function (int $s) use ($arama, $suzgec): string {
+            $p = ['page' => $s];
+            if ($arama !== '') {
+                $p['q'] = $arama;
+            }
+            if ($suzgec !== '') {
+                $p['status'] = $suzgec;
+            }
+            return 'affiliates.php?' . http_build_query($p);
+        };
+        ?>
+        <div class="pagination">
+            <?php if ($sayfa > 1): ?>
+                <a href="<?= htmlspecialchars($bag($sayfa - 1)) ?>"><i class="fas fa-chevron-left"></i></a>
+            <?php endif; ?>
+            <?php for ($i = max(1, $sayfa - 2); $i <= min($sayfaSayisi, $sayfa + 2); $i++): ?>
+                <?php if ($i === $sayfa): ?>
+                    <span class="active"><?= $i ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars($bag($i)) ?>"><?= $i ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+            <?php if ($sayfa < $sayfaSayisi): ?>
+                <a href="<?= htmlspecialchars($bag($sayfa + 1)) ?>"><i class="fas fa-chevron-right"></i></a>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
 <?php endif; ?>
 
-<!-- Management Modal -->
-<div id="affiliateModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>⚙️ Ortak Yönetimi</h3>
-            <button class="modal-close" onclick="closeAffiliateModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <input type="hidden" id="modal_affiliate_id">
-            
-            <!-- User Info -->
-            <div class="modal-user">
-                <div class="modal-user-avatar" id="modal_avatar">SA</div>
-                <div class="modal-user-info">
-                    <h4 id="modal_affiliate_name"></h4>
-                    <p id="modal_email"></p>
-                </div>
-            </div>
-            
-            <!-- Stats -->
-            <div class="info-cards">
-                <div class="info-card">
-                    <label>👁️ Ziyaret</label>
-                    <span id="modal_visits">0</span>
-                </div>
-                <div class="info-card">
-                    <label>👤 Kayıt</label>
-                    <span id="modal_signups">0</span>
-                </div>
-                <div class="info-card">
-                    <label>🛒 Sipariş</label>
-                    <span id="modal_orders">0</span>
-                </div>
-                <div class="info-card">
-                    <label>💰 Kazanç</label>
-                    <span id="modal_earnings">0 ₺</span>
-                </div>
-            </div>
-            
-            <!-- Status Update -->
-            <div class="form-section">
-                <div class="form-section-title">📋 Durum Yönetimi</div>
-                <form method="POST">
-                    <input type="hidden" name="affiliate_id" class="aff_id_field">
-                    <input type="hidden" name="update_status" value="1">
-                    <div class="form-group">
-                        <label>Hesap Durumu</label>
-                        <select name="status" class="form-control" id="modal_status">
-                            <option value="pending">⏳ Onay Bekliyor</option>
-                            <option value="active">✓ Aktif</option>
-                            <option value="suspended">⏸️ Askıya Al</option>
-                            <option value="rejected">✕ Reddet</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="width: 100%;">Durumu Güncelle</button>
-                </form>
-            </div>
-            
-            <!-- Commission Update -->
-            <div class="form-section">
-                <div class="form-section-title">💵 Komisyon Ayarları</div>
-                <form method="POST">
-                    <input type="hidden" name="affiliate_id" class="aff_id_field">
-                    <input type="hidden" name="update_commission" value="1">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <div class="form-group">
-                            <label>Komisyon Oranı</label>
-                            <input type="number" name="commission_rate" class="form-control" id="modal_commission" step="0.01" min="0" max="100" placeholder="%">
-                        </div>
-                        <div class="form-group">
-                            <label>Komisyon Tipi</label>
-                            <select name="commission_type" class="form-control" id="modal_commission_type">
-                                <option value="percentage">Yüzde (%)</option>
-                                <option value="fixed">Sabit Tutar (₺)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-success" style="width: 100%;">Komisyonu Güncelle</button>
-                </form>
-            </div>
-            
-            <!-- Notes -->
-            <div class="form-section">
-                <div class="form-section-title">📝 Admin Notları</div>
-                <form method="POST">
-                    <input type="hidden" name="affiliate_id" class="aff_id_field">
-                    <input type="hidden" name="update_notes" value="1">
-                    <div class="form-group">
-                        <textarea name="notes" class="form-control" id="modal_notes" placeholder="Bu ortak hakkında notlarınız..."></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-outline" style="width: 100%;">Notları Kaydet</button>
-                </form>
-            </div>
-            
-            <!-- Payment Details -->
-            <div class="payment-info">
-                <h5>💳 Ödeme Bilgileri</h5>
-                <p><strong>Yöntem:</strong> <span id="modal_payment_method"></span></p>
-                <div class="payment-details-box" id="modal_payment_details"></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-// Affiliate verileri
-var affiliatesData = <?= json_encode($affiliates, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-
-function openAffiliateModal(id) {
-    var affiliate = null;
-    for (var i = 0; i < affiliatesData.length; i++) {
-        if (parseInt(affiliatesData[i].id) === parseInt(id)) {
-            affiliate = affiliatesData[i];
-            break;
-        }
-    }
-    
-    if (!affiliate) {
-        alert('Affiliate bulunamadı! ID: ' + id);
-        return;
-    }
-    
-    var modal = document.getElementById('affiliateModal');
-    if (!modal) {
-        alert('Modal bulunamadı!');
-        return;
-    }
-    
-    modal.classList.add('active');
-    
-    var firstName = affiliate.first_name || '';
-    var lastName = affiliate.last_name || '';
-    var email = affiliate.email || '';
-    var initials = (firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
-    
-    document.getElementById('modal_affiliate_id').value = affiliate.id;
-    document.getElementById('modal_avatar').textContent = initials || '??';
-    document.getElementById('modal_affiliate_name').textContent = firstName + ' ' + lastName;
-    document.getElementById('modal_email').textContent = email;
-    document.getElementById('modal_visits').textContent = Number(affiliate.total_visits || 0).toLocaleString();
-    document.getElementById('modal_signups').textContent = Number(affiliate.total_signups || 0).toLocaleString();
-    document.getElementById('modal_orders').textContent = Number(affiliate.total_orders || 0).toLocaleString();
-    document.getElementById('modal_earnings').textContent = Number(affiliate.total_earnings || 0).toLocaleString('tr-TR', {minimumFractionDigits: 0}) + ' ₺';
-    document.getElementById('modal_status').value = affiliate.status || 'pending';
-    document.getElementById('modal_commission').value = affiliate.commission_rate || 10;
-    document.getElementById('modal_commission_type').value = affiliate.commission_type || 'percentage';
-    document.getElementById('modal_notes').value = affiliate.notes || '';
-    
-    var paymentMethod = affiliate.payment_method || 'bank_transfer';
-    var methodText = paymentMethod === 'bank_transfer' ? '🏦 Banka Havalesi' : (paymentMethod === 'papara' ? '💜 Papara' : '💙 PayPal');
-    document.getElementById('modal_payment_method').textContent = methodText;
-    document.getElementById('modal_payment_details').textContent = affiliate.payment_details || 'Ödeme bilgisi girilmemiş';
-    
-    // Set affiliate ID to all forms
-    document.querySelectorAll('.aff_id_field').forEach(function(input) {
-        input.value = affiliate.id;
-    });
-}
-
-function closeAffiliateModal() {
-    var modal = document.getElementById('affiliateModal');
-    if (modal) modal.classList.remove('active');
-}
-
-// Close on outside click
-document.addEventListener('DOMContentLoaded', function() {
-    var modal = document.getElementById('affiliateModal');
-    if (modal) {
-        modal.addEventListener('click', function(e) {
-            if (e.target === this) closeAffiliateModal();
-        });
-    }
-});
-</script>
-
-<?php include 'includes/footer.php'; ?>
-
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
