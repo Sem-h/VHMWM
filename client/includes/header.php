@@ -23,7 +23,7 @@ $currentClient = $clientStmt->fetch();
 
 // İstatistikler
 $activeServicesCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM services WHERE client_id = ? AND status = 'active'", [$clientId]);
-$pendingInvoicesCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM invoices WHERE client_id = ? AND status = 'unpaid'", [$clientId]);
+$pendingInvoicesCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM invoices WHERE client_id = ? AND status IN ('unpaid', 'collections')", [$clientId]);
 $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WHERE client_id = ? AND status IN ('open', 'customer_reply')", [$clientId]);
 ?>
 <!DOCTYPE html>
