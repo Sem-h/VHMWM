@@ -615,6 +615,9 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
         html[data-client-theme="light"] { --card-bg: rgba(255,255,255,.82); --text-primary: #172033; --text-secondary: #334155; --text-muted: #64748b; --border: #dbe3ef; }
         html[data-client-theme="light"] .top-navbar { background: rgba(255,255,255,.88); border-color: rgba(15,23,42,.09); }
         html[data-client-theme="light"] .navbar-logo, html[data-client-theme="light"] .navbar-logo-text, html[data-client-theme="light"] .nav-link, html[data-client-theme="light"] .user-name { color: #172033; }
+        /* Yukarıdaki seçici (0,2,1) özgüllükte; .nav-link.active (0,2,0)
+           beyazını eziyordu. Mavi zeminli etkin sekme beyaz kalmalı. */
+        html[data-client-theme="light"] .nav-link.active { color: #fff; }
         html[data-client-theme="light"] .navbar-logo img { filter: none; }
         html[data-client-theme="light"] .navbar-user, html[data-client-theme="light"] .theme-switch { background: rgba(15,23,42,.04); border-color: rgba(15,23,42,.09); color: #334155; }
         html[data-client-theme="light"] .navbar-user:hover, html[data-client-theme="light"] .theme-switch:hover { background: rgba(36, 116, 245,.10); }
