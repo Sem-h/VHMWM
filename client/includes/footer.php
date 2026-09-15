@@ -250,7 +250,7 @@ $socialMedia = [
     opacity: 0;
     visibility: hidden;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 15px rgba(36, 116, 245, 0.3);
     z-index: 99;
     display: flex;
     align-items: center;
@@ -264,7 +264,7 @@ $socialMedia = [
 
 .back-to-top:hover {
     transform: translateY(-5px);
-    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 6px 20px rgba(36, 116, 245, 0.4);
 }
 
 /* Responsive */

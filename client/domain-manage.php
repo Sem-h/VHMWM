@@ -121,8 +121,8 @@ include 'includes/header.php';
     --bg-dark: #0f1115;
     --card-bg: #181b21;
     --card-border: rgba(255, 255, 255, 0.06);
-    --primary: #6366f1;
-    --primary-glow: rgba(99, 102, 241, 0.5);
+    --primary: #2474f5;
+    --primary-glow: rgba(36, 116, 245, 0.5);
     --text-main: #ffffff;
     --text-muted: #9ca3af;
 }
@@ -160,10 +160,10 @@ include 'includes/header.php';
 }
 
 .nav-tab.active {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(36, 116, 245, 0.1);
     color: var(--primary);
-    border-color: rgba(99, 102, 241, 0.2);
-    box-shadow: 0 0 15px rgba(99, 102, 241, 0.1);
+    border-color: rgba(36, 116, 245, 0.2);
+    box-shadow: 0 0 15px rgba(36, 116, 245, 0.1);
 }
 
 .nav-tab i { font-size: 16px; }
@@ -248,7 +248,7 @@ include 'includes/header.php';
     transition: 0.3s;
     font-size: 14px;
 }
-.prem-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15); }
+.prem-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(36, 116, 245, 0.15); }
 
 .prem-btn {
     background: var(--primary);
@@ -258,10 +258,10 @@ include 'includes/header.php';
     border-radius: 12px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 12px rgba(36, 116, 245, 0.3);
     transition: 0.3s;
 }
-.prem-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4); }
+.prem-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(36, 116, 245, 0.4); }
 
 .status-grid {
     display: grid;
@@ -393,7 +393,7 @@ include 'includes/header.php';
         <div class="col-md-6 mb-4">
             <div class="feature-card">
                 <div style="display: flex; gap: 15px; margin-bottom: 20px;">
-                    <div style="width: 44px; height: 44px; background: rgba(99, 102, 241, 0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #6366f1;">
+                    <div style="width: 44px; height: 44px; background: rgba(36, 116, 245, 0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #2474f5;">
                         <i class="fas fa-key"></i>
                     </div>
                     <div>

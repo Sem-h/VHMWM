@@ -39,7 +39,7 @@ include 'includes/header.php';
     </p>
     <div style="display: flex; gap: 15px; justify-content: center;">
         <a href="invoice-pay.php?id=<?= $invoiceId ?>" class="btn btn-primary" 
-           style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%); color: white; text-decoration: none;">
+           style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%); color: white; text-decoration: none;">
             🔄 Tekrar Dene
         </a>
         <a href="invoice-view.php?id=<?= $invoiceId ?>" class="btn btn-outline" 

@@ -176,7 +176,7 @@ include 'includes/header.php';
 <?php if ($esxiServer && $vmState): ?>
 <!-- VM Kontrol Kartı -->
 <div class="card vm-control-card" style="margin-bottom: 25px;">
-    <div class="card-header" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));">
+    <div class="card-header" style="background: linear-gradient(135deg, rgba(36, 116, 245, 0.1), rgba(75, 145, 250, 0.1));">
         <h3><i class="fas fa-desktop"></i> Sunucu Kontrolü</h3>
         <div class="vm-status-badge <?= $vmState ?>">
             <span class="status-dot"></span>
@@ -326,7 +326,7 @@ include 'includes/header.php';
 .vm-info-item i {
     width: 36px;
     height: 36px;
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(36, 116, 245, 0.15);
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -409,13 +409,13 @@ include 'includes/header.php';
 }
 
 .vm-btn-primary:hover {
-    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 8px 20px rgba(36, 116, 245, 0.3);
 }
 
 .vm-loading {
     margin-top: 16px;
     padding: 12px;
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(36, 116, 245, 0.1);
     border-radius: 8px;
     color: var(--primary-light);
     font-size: 14px;
@@ -1024,7 +1024,7 @@ function vmPowerAction(action) {
 
 .cancel-type-option input:checked + .cancel-type-content {
     border-color: var(--primary);
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(36, 116, 245, 0.1);
 }
 
 .cancel-type-content i {
@@ -1071,7 +1071,7 @@ function vmPowerAction(action) {
 .form-control:focus {
     outline: none;
     border-color: var(--primary);
-    background: rgba(99, 102, 241, 0.05);
+    background: rgba(36, 116, 245, 0.05);
 }
 
 .form-control::placeholder {

@@ -134,7 +134,7 @@ include 'includes/header.php';
 .billing-card.selected,
 .billing-card:has(input:checked) {
     border-color: #3b82f6;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(99, 102, 241, 0.05));
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(36, 116, 245, 0.05));
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
@@ -144,7 +144,7 @@ include 'includes/header.php';
     width: 48px;
     height: 48px;
     margin: 0 auto 12px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #2474f5, #4b91fa);
     border-radius: 12px;
     display: flex;
     align-items: center;

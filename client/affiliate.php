@@ -293,8 +293,8 @@ include 'includes/header.php';
 
 /* Hero Section */
 .affiliate-hero {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.15) 50%, rgba(236, 72, 153, 0.1) 100%);
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.2) 0%, rgba(75, 145, 250, 0.15) 50%, rgba(236, 72, 153, 0.1) 100%);
+    border: 1px solid rgba(36, 116, 245, 0.2);
     border-radius: 20px;
     padding: 40px;
     margin-bottom: 30px;
@@ -309,7 +309,7 @@ include 'includes/header.php';
     right: -20%;
     width: 400px;
     height: 400px;
-    background: radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(75, 145, 250, 0.1) 0%, transparent 70%);
     animation: float 15s ease-in-out infinite;
 }
 
@@ -392,7 +392,7 @@ include 'includes/header.php';
 
 .stat-card:hover {
     transform: translateY(-5px);
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(36, 116, 245, 0.3);
 }
 
 .stat-icon {
@@ -405,7 +405,7 @@ include 'includes/header.php';
     font-size: 24px;
 }
 
-.stat-icon.purple { background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.2)); color: #a78bfa; }
+.stat-icon.purple { background: linear-gradient(135deg, rgba(75, 145, 250, 0.2), rgba(36, 116, 245, 0.2)); color: #7fb0fc; }
 .stat-icon.blue { background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2)); color: #60a5fa; }
 .stat-icon.green { background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2)); color: #6ee7b7; }
 .stat-icon.orange { background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.2)); color: #fcd34d; }
@@ -473,7 +473,7 @@ include 'includes/header.php';
 
 .btn-copy:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 8px 20px rgba(36, 116, 245, 0.3);
 }
 
 .btn-copy.copied {
@@ -585,7 +585,7 @@ include 'includes/header.php';
 .form-control:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    box-shadow: 0 0 0 3px rgba(36, 116, 245, 0.2);
 }
 
 textarea.form-control {
@@ -623,7 +623,7 @@ select.form-control option {
 
 .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 8px 25px rgba(36, 116, 245, 0.3);
 }
 
 .btn-success {
@@ -657,7 +657,7 @@ select.form-control option {
 .feature-icon {
     width: 48px;
     height: 48px;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.2), rgba(75, 145, 250, 0.2));
     border-radius: 12px;
     display: flex;
     align-items: center;
@@ -860,7 +860,7 @@ select.form-control option {
         <!-- Stats -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-icon purple"><i class="fas fa-eye"></i></div>
+                <div class="stat-icon cyan"><i class="fas fa-eye"></i></div>
                 <div class="stat-info">
                     <h4><?= number_format($stats['total_visits'] ?? 0) ?></h4>
                     <p>Toplam Ziyaret</p>

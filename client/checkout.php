@@ -317,7 +317,7 @@ include 'includes/header.php';
 
     .payment-option.selected {
         border-color: var(--primary);
-        background: rgba(99, 102, 241, 0.1);
+        background: rgba(36, 116, 245, 0.1);
     }
 
     .payment-option input[type="radio"] {
@@ -505,7 +505,7 @@ include 'includes/header.php';
     .btn-checkout {
         width: 100%;
         padding: 18px;
-        background: linear-gradient(135deg, var(--primary), #8b5cf6);
+        background: linear-gradient(135deg, var(--primary), #4b91fa);
         border: none;
         border-radius: 12px;
         color: white;
@@ -522,7 +522,7 @@ include 'includes/header.php';
 
     .btn-checkout:hover {
         transform: translateY(-2px);
-        box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3);
+        box-shadow: 0 10px 30px rgba(36, 116, 245, 0.3);
     }
 
     .secure-notice {

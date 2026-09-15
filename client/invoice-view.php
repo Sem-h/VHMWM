@@ -46,7 +46,7 @@ $statusInfo = match($invoice['status']) {
     'paid' => ['class' => 'paid', 'text' => 'Ödendi', 'icon' => 'fa-check-circle', 'color' => '#22c55e'],
     'unpaid' => ['class' => 'unpaid', 'text' => 'Ödenmedi', 'icon' => 'fa-clock', 'color' => '#f59e0b'],
     'cancelled' => ['class' => 'cancelled', 'text' => 'İptal Edildi', 'icon' => 'fa-times-circle', 'color' => '#ef4444'],
-    'refunded' => ['class' => 'refunded', 'text' => 'İade Edildi', 'icon' => 'fa-undo', 'color' => '#8b5cf6'],
+    'refunded' => ['class' => 'refunded', 'text' => 'İade Edildi', 'icon' => 'fa-undo', 'color' => '#4b91fa'],
     default => ['class' => 'draft', 'text' => 'Taslak', 'icon' => 'fa-file', 'color' => '#64748b']
 };
 
@@ -131,8 +131,8 @@ include 'includes/header.php';
 }
 
 .invoice-status.refunded {
-    background: rgba(139, 92, 246, 0.15);
-    color: #8b5cf6;
+    background: rgba(75, 145, 250, 0.15);
+    color: #4b91fa;
 }
 
 .action-buttons {
@@ -239,7 +239,7 @@ include 'includes/header.php';
 .invoice-label {
     font-size: 36px;
     font-weight: 800;
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    background: linear-gradient(135deg, var(--primary), #4b91fa);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -478,7 +478,7 @@ include 'includes/header.php';
 }
 
 .total-row.grand-total {
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    background: linear-gradient(135deg, var(--primary), #4b91fa);
     padding: 20px 24px;
 }
 
@@ -492,7 +492,7 @@ include 'includes/header.php';
 .payment-section {
     padding: 40px;
     text-align: center;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.05), rgba(75, 145, 250, 0.05));
     border-top: 2px dashed var(--border-color);
 }
 

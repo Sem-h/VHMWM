@@ -98,13 +98,13 @@ $statusColor = match($invoice['status']) {
         }
         
         .print-btn.primary {
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            background: linear-gradient(135deg, #2474f5, #4b91fa);
             color: white;
         }
         
         .print-btn.primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 8px 20px rgba(36, 116, 245, 0.3);
         }
         
         .print-btn.secondary {
@@ -114,8 +114,8 @@ $statusColor = match($invoice['status']) {
         }
         
         .print-btn.secondary:hover {
-            border-color: #6366f1;
-            color: #6366f1;
+            border-color: #2474f5;
+            color: #2474f5;
         }
         
         .invoice-container {
@@ -165,7 +165,7 @@ $statusColor = match($invoice['status']) {
             font-weight: 800;
             letter-spacing: 2px;
             margin-bottom: 8px;
-            background: linear-gradient(135deg, #a78bfa, #c084fc);
+            background: linear-gradient(135deg, #7fb0fc, #c084fc);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -362,7 +362,7 @@ $statusColor = match($invoice['status']) {
         }
         
         .total-row.grand {
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            background: linear-gradient(135deg, #2474f5, #4b91fa);
             padding: 18px 20px;
         }
         
@@ -424,7 +424,7 @@ $statusColor = match($invoice['status']) {
             }
             
             .total-row.grand {
-                background: #6366f1 !important;
+                background: #2474f5 !important;
                 -webkit-print-color-adjust: exact;
             }
             

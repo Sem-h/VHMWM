@@ -210,13 +210,13 @@ include 'includes/header.php';
 }
 
 .btn-primary-action {
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    background: linear-gradient(135deg, var(--primary), #4b91fa);
     color: white;
 }
 
 .btn-primary-action:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 8px 20px rgba(36, 116, 245, 0.3);
 }
 
 .btn-secondary-action {

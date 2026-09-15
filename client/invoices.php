@@ -70,7 +70,7 @@ foreach ($invoices as $invoice) {
 .stat-icon.red { background: linear-gradient(135deg, #ef4444, #dc2626); }
 .stat-icon.green { background: linear-gradient(135deg, #10b981, #059669); }
 .stat-icon.gray { background: linear-gradient(135deg, #64748b, #475569); }
-.stat-icon.purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.stat-icon.purple { background: linear-gradient(135deg, #4b91fa, #1b5ed4); }
 
 .stat-info h3 {
     font-size: 28px;
@@ -243,7 +243,7 @@ foreach ($invoices as $invoice) {
     </div>
     
     <div class="stat-card">
-        <div class="stat-icon purple">
+        <div class="stat-icon cyan">
             <i class="fas fa-lira-sign"></i>
         </div>
         <div class="stat-info">

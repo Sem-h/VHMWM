@@ -114,8 +114,8 @@ require_once 'includes/header.php';
 <style>
 /* Ticket View Styles */
 .ticket-header-card {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.1) 100%);
-    border: 1px solid rgba(99, 102, 241, 0.3);
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.15) 0%, rgba(75, 145, 250, 0.1) 100%);
+    border: 1px solid rgba(36, 116, 245, 0.3);
     border-radius: 16px;
     padding: 25px;
     margin-bottom: 25px;
@@ -156,7 +156,7 @@ require_once 'includes/header.php';
 }
 
 .ticket-number {
-    background: rgba(99, 102, 241, 0.2);
+    background: rgba(36, 116, 245, 0.2);
     color: var(--primary-light);
     padding: 4px 12px;
     border-radius: 8px;
@@ -287,7 +287,7 @@ require_once 'includes/header.php';
 }
 
 .message-count {
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(36, 116, 245, 0.15);
     color: var(--primary-light);
     padding: 4px 12px;
     border-radius: 15px;
@@ -315,12 +315,12 @@ require_once 'includes/header.php';
 }
 
 .message-item.admin-message {
-    background: rgba(99, 102, 241, 0.05);
+    background: rgba(36, 116, 245, 0.05);
     border-left: 3px solid var(--primary);
 }
 
 .message-item.admin-message:hover {
-    background: rgba(99, 102, 241, 0.08);
+    background: rgba(36, 116, 245, 0.08);
 }
 
 .message-header {
@@ -356,7 +356,7 @@ require_once 'includes/header.php';
 }
 
 .author-avatar.admin {
-    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
 }
 
 .author-info h4 {
@@ -372,7 +372,7 @@ require_once 'includes/header.php';
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
     color: #fff;
     padding: 3px 10px;
     border-radius: 12px;
@@ -449,8 +449,8 @@ require_once 'includes/header.php';
 .reply-textarea:focus {
     outline: none;
     border-color: var(--primary);
-    background: rgba(99, 102, 241, 0.05);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    background: rgba(36, 116, 245, 0.05);
+    box-shadow: 0 0 0 3px rgba(36, 116, 245, 0.1);
 }
 
 .reply-textarea::placeholder {
@@ -483,7 +483,7 @@ require_once 'includes/header.php';
     align-items: center;
     gap: 10px;
     padding: 14px 28px;
-    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
     color: #fff;
     border: none;
     border-radius: 12px;
@@ -495,7 +495,7 @@ require_once 'includes/header.php';
 
 .btn-send:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 8px 25px rgba(36, 116, 245, 0.4);
 }
 
 /* Closed Ticket Notice */
@@ -553,12 +553,12 @@ require_once 'includes/header.php';
 }
 
 .conversation-messages::-webkit-scrollbar-thumb {
-    background: rgba(99, 102, 241, 0.3);
+    background: rgba(36, 116, 245, 0.3);
     border-radius: 3px;
 }
 
 .conversation-messages::-webkit-scrollbar-thumb:hover {
-    background: rgba(99, 102, 241, 0.5);
+    background: rgba(36, 116, 245, 0.5);
 }
 
 /* Responsive */
@@ -653,7 +653,7 @@ require_once 'includes/header.php';
     <div class="conversation-messages">
         <?php if (empty($replies)): ?>
             <div class="empty-state" style="padding: 60px 20px;">
-                <div class="empty-icon" style="margin: 0 auto 20px; width: 70px; height: 70px; background: rgba(99, 102, 241, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px;">
+                <div class="empty-icon" style="margin: 0 auto 20px; width: 70px; height: 70px; background: rgba(36, 116, 245, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px;">
                     <i class="fas fa-inbox" style="color: var(--primary-light);"></i>
                 </div>
                 <h3 style="margin-bottom: 10px;">Henüz mesaj yok</h3>

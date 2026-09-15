@@ -12,6 +12,8 @@ if (!isset($_SESSION['client_id'])) {
 
 $siteLogo = Settings::getLogo();
 $clientId = $_SESSION['client_id'];
+$clientPrimaryColor = Settings::get('site_primary_color', '#2474f5');
+$clientSecondaryColor = Settings::get('site_secondary_color', '#0ea5e9');
 
 // Müşteri bilgilerini çek
 $db = Database::getInstance();
@@ -30,6 +32,11 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        (function () {
+            document.documentElement.dataset.clientTheme = localStorage.getItem('vhm-client-theme') || 'dark';
+        })();
+    </script>
     <title><?= $pageTitle ?? 'Müşteri Paneli' ?> - <?= SITE_NAME ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
@@ -37,10 +44,10 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-dark: #4f46e5;
-            --primary-light: #818cf8;
-            --secondary: #1e293b;
+            --primary: <?= htmlspecialchars((string) $clientPrimaryColor) ?>;
+            --primary-dark: color-mix(in srgb, <?= htmlspecialchars((string) $clientPrimaryColor) ?> 82%, #000);
+            --primary-light: color-mix(in srgb, <?= htmlspecialchars((string) $clientPrimaryColor) ?> 70%, #fff);
+            --secondary: <?= htmlspecialchars((string) $clientSecondaryColor) ?>;
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
@@ -212,7 +219,7 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
         }
 
         .dropdown-item:hover {
-            background: rgba(99, 102, 241, 0.1);
+            background: rgba(36, 116, 245, 0.1);
             color: var(--primary-light);
         }
 
@@ -397,7 +404,7 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 8px 20px rgba(36, 116, 245, 0.3);
         }
 
         .btn-success {
@@ -431,7 +438,7 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
         .form-control:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            box-shadow: 0 0 0 3px rgba(36, 116, 245, 0.2);
         }
 
         .form-control::placeholder {
@@ -587,6 +594,42 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
                 padding: 16px;
             }
         }
+
+        /* Müşteri paneli tema katmanı */
+        .theme-switch {
+            display: grid;
+            width: 42px;
+            height: 42px;
+            place-items: center;
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 11px;
+            background: rgba(255,255,255,.05);
+            color: #f8fafc;
+            cursor: pointer;
+            transition: .2s;
+        }
+        .theme-switch:hover { background: rgba(255,255,255,.12); transform: translateY(-1px); }
+        .theme-switch .fa-sun { display: none; }
+
+        html[data-client-theme="light"] body { background: linear-gradient(135deg, #f8fafc 0%, color-mix(in srgb, var(--primary) 9%, #fff) 52%, color-mix(in srgb, var(--secondary) 8%, #fff) 100%); color: #172033; }
+        html[data-client-theme="light"] { --card-bg: rgba(255,255,255,.82); --text-primary: #172033; --text-secondary: #334155; --text-muted: #64748b; --border: #dbe3ef; }
+        html[data-client-theme="light"] .top-navbar { background: rgba(255,255,255,.88); border-color: rgba(15,23,42,.09); }
+        html[data-client-theme="light"] .navbar-logo, html[data-client-theme="light"] .navbar-logo-text, html[data-client-theme="light"] .nav-link, html[data-client-theme="light"] .user-name { color: #172033; }
+        html[data-client-theme="light"] .navbar-logo img { filter: none; }
+        html[data-client-theme="light"] .navbar-user, html[data-client-theme="light"] .theme-switch { background: rgba(15,23,42,.04); border-color: rgba(15,23,42,.09); color: #334155; }
+        html[data-client-theme="light"] .navbar-user:hover, html[data-client-theme="light"] .theme-switch:hover { background: rgba(36, 116, 245,.10); }
+        html[data-client-theme="light"] .user-dropdown { background: #fff; border-color: #e2e8f0; box-shadow: 0 18px 45px rgba(15,23,42,.14); }
+        html[data-client-theme="light"] .dropdown-item { color: #334155; }
+        html[data-client-theme="light"] .mobile-toggle { color: #172033; }
+        html[data-client-theme="light"] .card, html[data-client-theme="light"] .cp-card, html[data-client-theme="light"] .cp-metric { border-color: rgba(15,23,42,.10); box-shadow: 0 8px 25px rgba(15,23,42,.035); }
+        html[data-client-theme="light"] .card-header, html[data-client-theme="light"] .cp-card-head, html[data-client-theme="light"] .cp-row, html[data-client-theme="light"] .cp-ticket { border-color: rgba(15,23,42,.08); }
+        html[data-client-theme="light"] .cp-metric, html[data-client-theme="light"] .cp-card-title, html[data-client-theme="light"] .cp-row h3, html[data-client-theme="light"] .cp-ticket h3, html[data-client-theme="light"] .cp-metric-value { color: #172033; }
+        html[data-client-theme="light"] .cp-quick a { border-color: #e2e8f0; color: #334155; background: #fff; }
+        html[data-client-theme="light"] .cp-quick a:hover { background: color-mix(in srgb, var(--primary) 9%, #fff); }
+        html[data-client-theme="light"] .main-footer { background: rgba(255,255,255,.84); border-color: rgba(15,23,42,.09); }
+        html[data-client-theme="light"] .main-footer, html[data-client-theme="light"] .main-footer a, html[data-client-theme="light"] .footer-logo { color: #334155; }
+        html[data-client-theme="light"] .theme-switch .fa-moon { display: none; }
+        html[data-client-theme="light"] .theme-switch .fa-sun { display: block; }
     </style>
 </head>
 
@@ -610,6 +653,10 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
                 </button>
 
                 <div class="navbar-right">
+                    <button type="button" class="theme-switch" onclick="toggleClientTheme()" aria-label="Temayı değiştir" title="Temayı değiştir">
+                        <i class="fas fa-moon" aria-hidden="true"></i>
+                        <i class="fas fa-sun" aria-hidden="true"></i>
+                    </button>
                     <div class="navbar-user" onclick="toggleUserMenu()">
                         <div class="user-avatar">
                             <?= strtoupper(substr($currentClient['first_name'] ?? 'M', 0, 1)) ?>
@@ -686,6 +733,12 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
     <main class="main-content">
 
         <script>
+            function toggleClientTheme() {
+                const nextTheme = document.documentElement.dataset.clientTheme === 'light' ? 'dark' : 'light';
+                document.documentElement.dataset.clientTheme = nextTheme;
+                localStorage.setItem('vhm-client-theme', nextTheme);
+            }
+
             function toggleUserMenu() {
                 const dropdown = document.querySelector('.user-dropdown');
                 const arrow = document.querySelector('.dropdown-arrow');

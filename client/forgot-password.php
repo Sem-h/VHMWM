@@ -102,8 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-light: #818cf8;
+            --primary: #2474f5;
+            --primary-light: #6ba3fb;
             --secondary: #0ea5e9;
             --success: #10b981;
             --danger: #ef4444;
@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Sol Taraf - Görsel */
         .visual-panel {
             width: 55%;
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4338ca 60%, #6366f1 100%);
+            background: linear-gradient(135deg, #0a1f45 0%, #10346f 30%, #164bab 60%, #2474f5 100%);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -164,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             bottom: -100px;
             right: -100px;
             animation-delay: -5s;
-            background: rgba(168, 85, 247, 0.1);
+            background: rgba(75, 145, 250, 0.1);
         }
         
         .shape:nth-child(3) {
@@ -173,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             top: 50%;
             left: 50%;
             animation-delay: -10s;
-            background: rgba(99, 102, 241, 0.1);
+            background: rgba(36, 116, 245, 0.1);
         }
         
         @keyframes float {
@@ -302,7 +302,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .step-number {
             width: 32px;
             height: 32px;
-            background: linear-gradient(135deg, var(--primary) 0%, #a855f7 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
             border-radius: 10px;
             display: flex;
             align-items: center;
@@ -359,7 +359,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .logo-icon {
             width: 48px;
             height: 48px;
-            background: linear-gradient(135deg, var(--primary) 0%, #a855f7 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
             border-radius: 14px;
             display: flex;
             align-items: center;
@@ -489,7 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             outline: none;
             border-color: var(--primary);
             background: white;
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+            box-shadow: 0 0 0 4px rgba(36, 116, 245, 0.1);
         }
         
         .form-input:focus + .input-icon,
@@ -505,7 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .btn-submit {
             width: 100%;
             padding: 18px 24px;
-            background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
             color: white;
             border: none;
             border-radius: 14px;
@@ -539,7 +539,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         .btn-submit:hover {
             transform: translateY(-3px);
-            box-shadow: 0 15px 35px rgba(99, 102, 241, 0.35);
+            box-shadow: 0 15px 35px rgba(36, 116, 245, 0.35);
         }
         
         .btn-submit:active {

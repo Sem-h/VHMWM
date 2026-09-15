@@ -76,8 +76,8 @@ include 'includes/header.php';
 
 /* Page Header */
 .page-title-card {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.1) 100%);
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.15) 0%, rgba(75, 145, 250, 0.1) 100%);
+    border: 1px solid rgba(36, 116, 245, 0.2);
     border-radius: 16px;
     padding: 30px;
     margin-bottom: 30px;
@@ -97,7 +97,7 @@ include 'includes/header.php';
 .page-title-icon {
     width: 60px;
     height: 60px;
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    background: linear-gradient(135deg, var(--primary), #4b91fa);
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -175,7 +175,7 @@ include 'includes/header.php';
 }
 
 .email-item:hover {
-    background: rgba(99, 102, 241, 0.05);
+    background: rgba(36, 116, 245, 0.05);
 }
 
 .email-item:last-child {
@@ -185,7 +185,7 @@ include 'includes/header.php';
 .email-icon {
     width: 44px;
     height: 44px;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%);
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.2) 0%, rgba(75, 145, 250, 0.2) 100%);
     border-radius: 12px;
     display: flex;
     align-items: center;
@@ -223,7 +223,7 @@ include 'includes/header.php';
 .email-template {
     display: inline-block;
     padding: 3px 10px;
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(36, 116, 245, 0.15);
     border-radius: 6px;
     font-size: 11px;
     color: var(--primary-light);
@@ -288,7 +288,7 @@ include 'includes/header.php';
 .empty-icon {
     width: 100px;
     height: 100px;
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(36, 116, 245, 0.1);
     border-radius: 50%;
     display: flex;
     align-items: center;

@@ -254,9 +254,9 @@ function getSidebarStyles(): string {
     return '
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-dark: #4f46e5;
-            --primary-light: #818cf8;
+            --primary: #2474f5;
+            --primary-dark: #1b5ed4;
+            --primary-light: #6ba3fb;
             --secondary: #0ea5e9;
             --success: #10b981;
             --warning: #f59e0b;
@@ -399,14 +399,14 @@ function getSidebarStyles(): string {
         }
         
         .nav-item:hover {
-            background: rgba(99, 102, 241, 0.1);
+            background: rgba(36, 116, 245, 0.1);
             color: var(--white);
         }
         
         .nav-item.active {
             background: linear-gradient(135deg, var(--primary), var(--primary-dark));
             color: var(--white);
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 15px rgba(36, 116, 245, 0.3);
         }
         
         .nav-item.highlight {
@@ -586,7 +586,7 @@ function getSidebarStyles(): string {
             border-radius: 12px;
             cursor: pointer;
             font-size: 18px;
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 15px rgba(36, 116, 245, 0.3);
         }
         
         /* Responsive */

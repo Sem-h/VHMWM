@@ -93,7 +93,7 @@ try {
 
 .stat-icon.blue { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
 .stat-icon.green { background: linear-gradient(135deg, #10b981, #059669); }
-.stat-icon.purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.stat-icon.purple { background: linear-gradient(135deg, #4b91fa, #1b5ed4); }
 .stat-icon.gray { background: linear-gradient(135deg, #64748b, #475569); }
 
 .stat-info h3 {
@@ -307,7 +307,7 @@ try {
     </div>
     
     <div class="stat-card">
-        <div class="stat-icon purple">
+        <div class="stat-icon cyan">
             <i class="fas fa-reply"></i>
         </div>
         <div class="stat-info">

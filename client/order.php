@@ -78,17 +78,17 @@ include 'includes/header.php';
 }
 
 .category-tab:hover {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(36, 116, 245, 0.1);
     border-color: var(--primary);
     color: var(--primary-light);
     transform: translateY(-2px);
 }
 
 .category-tab.active {
-    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
     border-color: transparent;
     color: #fff;
-    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 15px rgba(36, 116, 245, 0.3);
 }
 
 .category-tab .tab-icon {
@@ -120,7 +120,7 @@ include 'includes/header.php';
 
 .product-card.featured {
     border-color: var(--primary);
-    box-shadow: 0 0 30px rgba(99, 102, 241, 0.2);
+    box-shadow: 0 0 30px rgba(36, 116, 245, 0.2);
 }
 
 .product-card.featured::before {
@@ -155,7 +155,7 @@ include 'includes/header.php';
 }
 
 .product-icon.hosting { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
-.product-icon.vps { background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); }
+.product-icon.vps { background: linear-gradient(135deg, #4b91fa 0%, #164bab 100%); }
 .product-icon.vds { background: linear-gradient(135deg, #ec4899 0%, #be185d 100%); }
 .product-icon.dedicated { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
 .product-icon.domain { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
@@ -220,8 +220,8 @@ include 'includes/header.php';
 
 /* Pricing Box */
 .pricing-box {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.1) 0%, rgba(75, 145, 250, 0.1) 100%);
+    border: 1px solid rgba(36, 116, 245, 0.2);
     border-radius: 16px;
     padding: 25px;
     text-align: center;
@@ -290,7 +290,7 @@ include 'includes/header.php';
     gap: 10px;
     width: 100%;
     padding: 16px;
-    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
     border: none;
     border-radius: 12px;
     color: #fff;
@@ -303,7 +303,7 @@ include 'includes/header.php';
 
 .order-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 10px 25px rgba(36, 116, 245, 0.4);
 }
 
 .order-btn i {
@@ -323,7 +323,7 @@ include 'includes/header.php';
 .empty-icon {
     width: 120px;
     height: 120px;
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(36, 116, 245, 0.1);
     border-radius: 50%;
     display: flex;
     align-items: center;

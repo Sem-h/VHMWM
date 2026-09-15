@@ -95,7 +95,7 @@ include 'includes/header.php';
 .payment-header h1 {
     font-size: 32px;
     font-weight: 800;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #2474f5, #4b91fa);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -133,7 +133,7 @@ include 'includes/header.php';
 }
 
 .summary-header {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #2474f5, #4b91fa);
     padding: 24px 30px;
     color: white;
 }
@@ -180,7 +180,7 @@ include 'includes/header.php';
 }
 
 .summary-row.total {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.05), rgba(75, 145, 250, 0.05));
     margin: 20px -30px -30px -30px;
     padding: 24px 30px;
     border-top: 2px solid #e2e8f0;
@@ -196,7 +196,7 @@ include 'includes/header.php';
 .summary-row.total .value {
     font-size: 24px;
     font-weight: 800;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #2474f5, #4b91fa);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -223,7 +223,7 @@ include 'includes/header.php';
 }
 
 .section-title i {
-    color: #6366f1;
+    color: #2474f5;
     font-size: 24px;
 }
 
@@ -253,15 +253,15 @@ include 'includes/header.php';
     left: 0;
     right: 0;
     height: 4px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #2474f5, #4b91fa);
     transform: scaleX(0);
     transition: transform 0.3s;
 }
 
 .gateway-card:hover {
-    border-color: #6366f1;
+    border-color: #2474f5;
     transform: translateY(-4px);
-    box-shadow: 0 12px 30px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 12px 30px rgba(36, 116, 245, 0.15);
 }
 
 .gateway-card:hover::before {
@@ -269,9 +269,9 @@ include 'includes/header.php';
 }
 
 .gateway-card.active {
-    border-color: #6366f1;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08));
-    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.2);
+    border-color: #2474f5;
+    background: linear-gradient(135deg, rgba(36, 116, 245, 0.08), rgba(75, 145, 250, 0.08));
+    box-shadow: 0 8px 25px rgba(36, 116, 245, 0.2);
 }
 
 .gateway-card.active::before {
@@ -285,7 +285,7 @@ include 'includes/header.php';
     right: 12px;
     width: 24px;
     height: 24px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #2474f5, #4b91fa);
     color: white;
     border-radius: 50%;
     display: flex;
@@ -327,7 +327,7 @@ include 'includes/header.php';
 }
 
 .payment-form h3 i {
-    color: #6366f1;
+    color: #2474f5;
 }
 
 .payment-form p {
@@ -517,7 +517,7 @@ include 'includes/header.php';
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>
-                            <div style="margin-top: 20px; padding: 16px; background: rgba(255,255,255,0.6); border-radius: 12px; border-left: 4px solid #6366f1;">
+                            <div style="margin-top: 20px; padding: 16px; background: rgba(255,255,255,0.6); border-radius: 12px; border-left: 4px solid #2474f5;">
                                 <strong style="color: #1e293b; display: block; margin-bottom: 12px; font-size: 14px;">
                                     <i class="fas fa-lightbulb" style="color: #f59e0b;"></i> Çözüm Önerileri
                                 </strong>
@@ -569,15 +569,15 @@ include 'includes/header.php';
                             Havale/EFT ile Ödeme
                         </h3>
                         <p style="color: #64748b; margin-bottom: 24px; line-height: 1.8;">
-                            <i class="fas fa-info-circle" style="color: #6366f1; margin-right: 8px;"></i>
+                            <i class="fas fa-info-circle" style="color: #2474f5; margin-right: 8px;"></i>
                             Lütfen aşağıdaki banka hesaplarından birine ödemenizi yapın. Ödeme yaparken <strong>açıklama kısmına sipariş numaranızı</strong> yazmayı unutmayın.
                         </p>
                         
                         <!-- Sipariş Numarası -->
                         <?php if ($orderNumber): ?>
-                        <div style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1)); border: 2px solid #6366f1; border-radius: 12px; padding: 20px; margin-bottom: 30px; text-align: center;">
+                        <div style="background: linear-gradient(135deg, rgba(36, 116, 245, 0.1), rgba(75, 145, 250, 0.1)); border: 2px solid #2474f5; border-radius: 12px; padding: 20px; margin-bottom: 30px; text-align: center;">
                             <div style="font-size: 13px; color: #64748b; margin-bottom: 8px; font-weight: 600;">SİPARİŞ NUMARANIZ</div>
-                            <div style="font-size: 24px; font-weight: 800; color: #6366f1; font-family: 'JetBrains Mono', monospace; letter-spacing: 2px;">
+                            <div style="font-size: 24px; font-weight: 800; color: #2474f5; font-family: 'JetBrains Mono', monospace; letter-spacing: 2px;">
                                 <?= htmlspecialchars($orderNumber) ?>
                             </div>
                             <div style="margin-top: 12px;">
@@ -597,7 +597,7 @@ include 'includes/header.php';
                         <!-- Banka Hesapları -->
                         <div style="margin-bottom: 30px;">
                             <h4 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 20px;">
-                                <i class="fas fa-building" style="color: #6366f1;"></i> Banka Hesaplarımız
+                                <i class="fas fa-building" style="color: #2474f5;"></i> Banka Hesaplarımız
                             </h4>
                             <div style="display: grid; gap: 20px;">
                                 <?php foreach ($bankAccounts as $index => $bank): ?>
@@ -613,7 +613,7 @@ include 'includes/header.php';
                                                 </p>
                                             <?php endif; ?>
                                         </div>
-                                        <span style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;">
+                                        <span style="background: linear-gradient(135deg, #2474f5, #4b91fa); color: white; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;">
                                             <?= htmlspecialchars($bank['currency']) ?>
                                         </span>
                                     </div>
@@ -636,11 +636,11 @@ include 'includes/header.php';
                                     <?php if ($bank['iban']): ?>
                                     <div style="background: #f8fafc; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
                                         <label style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">IBAN</label>
-                                        <div style="font-size: 16px; font-weight: 700; color: #6366f1; font-family: 'JetBrains Mono', monospace; word-break: break-all;">
+                                        <div style="font-size: 16px; font-weight: 700; color: #2474f5; font-family: 'JetBrains Mono', monospace; word-break: break-all;">
                                             <?= htmlspecialchars($bank['iban']) ?>
                                         </div>
                                         <button onclick="copyIBAN('<?= htmlspecialchars($bank['iban']) ?>')" 
-                                                style="margin-top: 8px; padding: 6px 12px; background: #6366f1; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">
+                                                style="margin-top: 8px; padding: 6px 12px; background: #2474f5; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">
                                             <i class="fas fa-copy"></i> IBAN'ı Kopyala
                                         </button>
                                     </div>
@@ -662,7 +662,7 @@ include 'includes/header.php';
                         <!-- Ödeme Onay Formu -->
                         <div style="background: #f8fafc; border-radius: 16px; padding: 24px; border: 2px dashed #e2e8f0;">
                             <h4 style="font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 16px;">
-                                <i class="fas fa-sticky-note" style="color: #6366f1;"></i> Siparişiniz ile Alakalı Not
+                                <i class="fas fa-sticky-note" style="color: #2474f5;"></i> Siparişiniz ile Alakalı Not
                             </h4>
                             <form method="POST" action="payment-confirm.php">
                                 <input type="hidden" name="invoice_id" value="<?= $invoice['id'] ?>">

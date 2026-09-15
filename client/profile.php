@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
     /* Page Specific Styles */
     .profile-header {
-        background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+        background: linear-gradient(135deg, var(--primary) 0%, #4b91fa 100%);
         border-radius: 16px;
         padding: 30px;
         margin-bottom: 30px;
@@ -195,7 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .form-control:focus {
         outline: none;
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        box-shadow: 0 0 0 3px rgba(36, 116, 245, 0.2);
     }
 
     .form-control::placeholder {

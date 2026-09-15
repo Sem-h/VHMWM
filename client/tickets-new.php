@@ -266,7 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 .form-control:focus {
     outline: none;
     border-color: var(--primary);
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(36, 116, 245, 0.1);
 }
 
 textarea.form-control {
@@ -305,8 +305,8 @@ select.form-control option:checked {
     display: flex;
     gap: 20px;
     padding: 25px;
-    background: rgba(99, 102, 241, 0.1);
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: rgba(36, 116, 245, 0.1);
+    border: 1px solid rgba(36, 116, 245, 0.2);
     border-radius: 12px;
     margin-top: 25px;
 }
