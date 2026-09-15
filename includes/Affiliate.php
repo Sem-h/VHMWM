@@ -220,53 +220,92 @@ class Affiliate
     /**
      * Çekim talebi oluştur
      */
+    /**
+     * Çekim talebi oluşturur.
+     *
+     * Önceki sürümde talep kaydı ile bakiye düşümü ayrı ayrı çalışıyordu;
+     * ortada hata olursa talep oluşup bakiye düşmeden kalıyordu. Ayrıca
+     * tutarın eksi olup olmadığına bakılmıyordu: min_withdrawal 0 yapılırsa
+     * eksi tutar "balance - (-100)" ile bakiyeyi artırıyordu.
+     */
     public static function requestWithdrawal(int $affiliateId, float $amount): array
     {
-        $affiliate = Database::fetch("SELECT * FROM affiliates WHERE id = ? AND status = 'active'", [$affiliateId]);
-        
-        if (!$affiliate) {
-            return ['success' => false, 'message' => 'Affiliate hesabı bulunamadı.'];
+        if ($amount <= 0) {
+            return ['success' => false, 'message' => 'Çekim tutarı sıfırdan büyük olmalı.'];
         }
-        
-        if ($amount > $affiliate['balance']) {
-            return ['success' => false, 'message' => 'Yetersiz bakiye.'];
-        }
-        
-        if ($amount < $affiliate['min_withdrawal']) {
-            return ['success' => false, 'message' => 'Minimum çekim tutarı: ' . number_format($affiliate['min_withdrawal'], 2) . ' TL'];
-        }
-        
-        // Bekleyen talep var mı?
-        $pending = Database::fetchColumn(
-            "SELECT id FROM affiliate_withdrawals WHERE affiliate_id = ? AND status IN ('pending', 'processing')",
-            [$affiliateId]
-        );
-        if ($pending) {
-            return ['success' => false, 'message' => 'Bekleyen bir çekim talebiniz bulunmaktadır.'];
-        }
-        
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+
         try {
-            // Talep oluştur
+            /* Satır kilitlenir; iki istek aynı anda gelirse ikincisi
+               bekleyen talebi görür ve reddedilir. */
+            $affiliate = Database::fetch(
+                "SELECT * FROM affiliates WHERE id = ? AND status = 'active' FOR UPDATE",
+                [$affiliateId]
+            );
+
+            if (!$affiliate) {
+                $db->rollBack();
+                return ['success' => false, 'message' => 'Satış ortaklığı hesabı bulunamadı ya da etkin değil.'];
+            }
+
+            if ($amount > (float) $affiliate['balance']) {
+                $db->rollBack();
+                return ['success' => false, 'message' => 'Yetersiz bakiye.'];
+            }
+
+            if ($amount < (float) $affiliate['min_withdrawal']) {
+                $db->rollBack();
+                return [
+                    'success' => false,
+                    'message' => 'En az çekim tutarı: '
+                        . number_format((float) $affiliate['min_withdrawal'], 2, ',', '.') . ' TL',
+                ];
+            }
+
+            $bekleyen = Database::fetchColumn(
+                "SELECT id FROM affiliate_withdrawals
+                  WHERE affiliate_id = ? AND status IN ('pending', 'processing')",
+                [$affiliateId]
+            );
+
+            if ($bekleyen) {
+                $db->rollBack();
+                return ['success' => false, 'message' => 'Bekleyen bir çekim talebiniz var.'];
+            }
+
             Database::insert('affiliate_withdrawals', [
                 'affiliate_id' => $affiliateId,
                 'amount' => $amount,
                 'payment_method' => $affiliate['payment_method'],
                 'payment_details' => $affiliate['payment_details'],
-                'status' => 'pending'
+                'status' => 'pending',
             ]);
-            
-            // Bakiyeden düş (beklemede)
-            Database::query("UPDATE affiliates SET balance = balance - ? WHERE id = ?", [$amount, $affiliateId]);
-            
+
+            /* Bakiyeden düş; koşul yeniden kontrol edilir ki yarışta eksiye düşmesin */
+            $etkilenen = Database::query(
+                "UPDATE affiliates SET balance = balance - ? WHERE id = ? AND balance >= ?",
+                [$amount, $affiliateId, $amount]
+            );
+
+            if ($etkilenen->rowCount() !== 1) {
+                $db->rollBack();
+                return ['success' => false, 'message' => 'Bakiye güncellenemedi, talep oluşturulmadı.'];
+            }
+
+            $db->commit();
+
             return ['success' => true, 'message' => 'Çekim talebiniz alındı.'];
         } catch (Throwable $e) {
-            return ['success' => false, 'message' => 'Bir hata oluştu.'];
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            error_log('Çekim talebi oluşturulamadı: ' . $e->getMessage());
+
+            return ['success' => false, 'message' => 'Talep oluşturulamadı, bakiyenizde değişiklik olmadı.'];
         }
     }
-    
-    /**
-     * Referans linkini oluştur
-     */
     public static function getReferralLink(string $code): string
     {
         return SITE_URL . '?ref=' . $code;

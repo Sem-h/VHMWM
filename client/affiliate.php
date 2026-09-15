@@ -1,1138 +1,914 @@
 <?php
 /**
- * WHMVM - Müşteri Satış Ortaklığı Sayfası
+ * VHM - Satış ortaklığı (müşteri paneli)
+ *
+ * Önceki sürümdeki sorunlar:
+ *   - 1138 satırın 493'ü satır içi <style> idi ve panel.css'te zaten
+ *     tanımlı olan kart, tablo, buton, rozet stillerini yeniden yazıyordu.
+ *   - ensureAffiliateTables() her sayfa açılışında CREATE TABLE
+ *     çalıştırıyordu; şema işi istek başına yapılacak iş değil.
+ *   - Para çekme ve ödeme bilgisi formlarında CSRF belirteci yoktu.
+ *     Müşteri panelinin tamamında yok; burada başlatıldı.
+ *   - PRG yoktu; sayfa yenilenince çekim talebi tekrar gönderiliyordu.
+ *
+ * Görünüm client/assets/css/panel.css bileşenlerinin üstüne kuruldu;
+ * yalnızca bu sayfaya özgü olanlar aşağıda "or-" öneki ile tanımlı.
  */
+
 declare(strict_types=1);
+
 require_once dirname(__DIR__) . '/config/config.php';
 require_once dirname(__DIR__) . '/includes/Database.php';
 require_once dirname(__DIR__) . '/includes/Settings.php';
 require_once dirname(__DIR__) . '/includes/Affiliate.php';
-session_name(SESSION_NAME); session_start();
+require_once dirname(__DIR__) . '/includes/Guvenlik.php';
+
+Guvenlik::oturumBaslat();
 
 if (!isset($_SESSION['client_id'])) {
     header('Location: index.php');
     exit;
 }
 
+$clientId = (int) $_SESSION['client_id'];
+$acik = Settings::get('affiliate_enabled', '1') === '1';
+
+const OR_ODEME_YONTEMLERI = [
+    'bank_transfer' => 'Banka havalesi / EFT',
+    'papara' => 'Papara',
+    'crypto' => 'Kripto cüzdan',
+    'other' => 'Diğer',
+];
+
+const OR_DURUMLAR = [
+    'pending' => ['Onay bekliyor', 'warning'],
+    'active' => ['Etkin', 'success'],
+    'suspended' => ['Askıya alındı', 'danger'],
+    'rejected' => ['Reddedildi', 'danger'],
+];
+
+const OR_KOMISYON_DURUM = [
+    'pending' => ['Bekliyor', 'warning'],
+    'approved' => ['Onaylandı', 'success'],
+    'paid' => ['Ödendi', 'success'],
+    'cancelled' => ['İptal', 'danger'],
+    'rejected' => ['Reddedildi', 'danger'],
+];
+
+const OR_CEKIM_DURUM = [
+    'pending' => ['Bekliyor', 'warning'],
+    'processing' => ['İşleniyor', 'info'],
+    'completed' => ['Tamamlandı', 'success'],
+    'rejected' => ['Reddedildi', 'danger'],
+];
+
+function orDon(string $tip, string $metin): never
+{
+    $_SESSION['or_mesaj'] = ['tip' => $tip, 'metin' => $metin];
+    header('Location: affiliate.php');
+    exit;
+}
+
+/** Ödeme bilgisi alanlarını doğrular */
+function orOdemeOku(): array
+{
+    $yontem = (string) ($_POST['payment_method'] ?? 'bank_transfer');
+    $bilgi = trim((string) ($_POST['payment_details'] ?? ''));
+
+    if (!isset(OR_ODEME_YONTEMLERI[$yontem])) {
+        orDon('error', 'Geçersiz ödeme yöntemi.');
+    }
+    if ($bilgi === '') {
+        orDon('error', 'Ödeme bilgilerinizi girin; ödemeyi buraya yapacağız.');
+    }
+    if (mb_strlen($bilgi) > 500) {
+        orDon('error', 'Ödeme bilgisi çok uzun (en fazla 500 karakter).');
+    }
+
+    return [$yontem, $bilgi];
+}
+
+$ortak = Affiliate::getByClientId($clientId);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    /* Müşteri panelinde CSRF yoktu; para çekme burada yapılıyor. */
+    Guvenlik::zorunlu();
+
+    if (!$acik) {
+        orDon('error', 'Satış ortaklığı programı şu anda kapalı.');
+    }
+
+    /* ---------- Başvuru ---------- */
+    if (isset($_POST['basvur'])) {
+        if ($ortak) {
+            orDon('uyari', 'Zaten bir satış ortaklığı hesabınız var.');
+        }
+
+        [$yontem, $bilgi] = orOdemeOku();
+
+        $yeniId = Affiliate::register($clientId, [
+            'payment_method' => $yontem,
+            'payment_details' => $bilgi,
+        ]);
+
+        if (!$yeniId) {
+            orDon('error', 'Başvuru oluşturulamadı, lütfen tekrar deneyin.');
+        }
+
+        orDon('success', Settings::get('affiliate_auto_approve', '0') === '1'
+            ? 'Satış ortaklığı hesabınız oluşturuldu, hemen kullanmaya başlayabilirsiniz.'
+            : 'Başvurunuz alındı. Onaylandığında hesabınız etkinleşecek.');
+    }
+
+    if (!$ortak) {
+        orDon('error', 'Önce satış ortaklığı başvurusu yapmalısınız.');
+    }
+
+    /* ---------- Ödeme bilgisi ---------- */
+    if (isset($_POST['odeme_kaydet'])) {
+        [$yontem, $bilgi] = orOdemeOku();
+
+        try {
+            Database::query(
+                "UPDATE affiliates SET payment_method = ?, payment_details = ? WHERE id = ?",
+                [$yontem, $bilgi, (int) $ortak['id']]
+            );
+        } catch (Throwable $e) {
+            error_log('Ödeme bilgisi güncellenemedi: ' . $e->getMessage());
+            orDon('error', 'Ödeme bilgisi kaydedilemedi.');
+        }
+
+        orDon('success', 'Ödeme bilgileriniz güncellendi.');
+    }
+
+    /* ---------- Çekim talebi ---------- */
+    if (isset($_POST['cekim'])) {
+        if ($ortak['status'] !== 'active') {
+            orDon('error', 'Çekim talebi için hesabınızın etkin olması gerekiyor.');
+        }
+
+        $ham = str_replace(',', '.', trim((string) ($_POST['tutar'] ?? '')));
+
+        if ($ham === '' || !is_numeric($ham)) {
+            orDon('error', 'Çekim tutarını sayı olarak girin.');
+        }
+
+        $sonuc = Affiliate::requestWithdrawal((int) $ortak['id'], (float) $ham);
+        orDon($sonuc['success'] ? 'success' : 'error', $sonuc['message']);
+    }
+
+    orDon('error', 'Tanımsız işlem.');
+}
+
+$mesaj = null;
+if (!empty($_SESSION['or_mesaj'])) {
+    $mesaj = $_SESSION['or_mesaj'];
+    unset($_SESSION['or_mesaj']);
+}
+
+$sayilar = $ortak ? Affiliate::getStats((int) $ortak['id']) : [];
+$komisyonlar = [];
+$cekimler = [];
+$referanslar = [];
+$bekleyenCekim = null;
+
+if ($ortak) {
+    $ortakId = (int) $ortak['id'];
+
+    $komisyonlar = Database::fetchAll(
+        "SELECT * FROM affiliate_commissions WHERE affiliate_id = ?
+          ORDER BY created_at DESC LIMIT 15",
+        [$ortakId]
+    );
+
+    $cekimler = Database::fetchAll(
+        "SELECT * FROM affiliate_withdrawals WHERE affiliate_id = ?
+          ORDER BY created_at DESC LIMIT 15",
+        [$ortakId]
+    );
+
+    $referanslar = Database::fetchAll(
+        "SELECT ar.*, c.first_name, c.last_name, c.email
+           FROM affiliate_referrals ar
+           JOIN clients c ON c.id = ar.referred_client_id
+          WHERE ar.affiliate_id = ?
+          ORDER BY ar.created_at DESC LIMIT 20",
+        [$ortakId]
+    );
+
+    foreach ($cekimler as $c) {
+        if (in_array($c['status'], ['pending', 'processing'], true)) {
+            $bekleyenCekim = $c;
+            break;
+        }
+    }
+}
+
+/**
+ * Referansın e-postasını kısmen gizler.
+ * Satış ortağının, getirdiği kişiyi tanıması için yeterli;
+ * tam adresi görmesi gerekmiyor.
+ */
+function orEpostaGizle(string $eposta): string
+{
+    $at = strpos($eposta, "@");
+    if ($at === false || $at < 1) {
+        return $eposta;
+    }
+
+    $ad = substr($eposta, 0, $at);
+    $alan = substr($eposta, $at);
+
+    if (mb_strlen($ad) <= 2) {
+        return mb_substr($ad, 0, 1) . str_repeat("*", 3) . $alan;
+    }
+
+    return mb_substr($ad, 0, 2) . str_repeat("*", min(6, mb_strlen($ad) - 2)) . $alan;
+}
+
+function orPara(mixed $t): string
+{
+    return number_format((float) $t, 2, ',', '.') . ' ₺';
+}
+
 $pageTitle = 'Satış Ortaklığı';
 $pageIcon = 'fas fa-handshake';
 $currentPage = 'affiliate';
-$clientId = $_SESSION['client_id'];
-
-// Tabloları kontrol et ve oluştur
-function ensureAffiliateTables() {
-    $db = Database::getInstance();
-    
-    // affiliates tablosu var mı?
-    try {
-        $db->query("SELECT 1 FROM affiliates LIMIT 1");
-        return; // Tablo var, işlem gerekmiyor
-    } catch (Throwable $e) {
-        // Tablo yok, oluştur
-    }
-    
-    // Tabloları oluştur
-    $tables = [
-        "CREATE TABLE IF NOT EXISTS affiliates (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            client_id INT UNSIGNED NOT NULL UNIQUE,
-            affiliate_code VARCHAR(32) NOT NULL UNIQUE,
-            status ENUM('pending', 'active', 'suspended', 'rejected') DEFAULT 'pending',
-            commission_rate DECIMAL(5,2) DEFAULT 10.00,
-            commission_type ENUM('percentage', 'fixed') DEFAULT 'percentage',
-            payment_method VARCHAR(50) DEFAULT 'bank_transfer',
-            payment_details TEXT,
-            total_visits INT UNSIGNED DEFAULT 0,
-            total_signups INT UNSIGNED DEFAULT 0,
-            total_orders INT UNSIGNED DEFAULT 0,
-            total_earnings DECIMAL(15,2) DEFAULT 0.00,
-            total_withdrawn DECIMAL(15,2) DEFAULT 0.00,
-            balance DECIMAL(15,2) DEFAULT 0.00,
-            min_withdrawal DECIMAL(10,2) DEFAULT 100.00,
-            approved_at DATETIME NULL,
-            approved_by INT UNSIGNED NULL,
-            notes TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_client (client_id),
-            INDEX idx_code (affiliate_code),
-            INDEX idx_status (status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-        
-        "CREATE TABLE IF NOT EXISTS affiliate_visits (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            affiliate_id INT UNSIGNED NOT NULL,
-            ip_address VARCHAR(45),
-            user_agent TEXT,
-            referrer_url TEXT,
-            landing_page VARCHAR(500),
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_affiliate (affiliate_id),
-            INDEX idx_created (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-        
-        "CREATE TABLE IF NOT EXISTS affiliate_referrals (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            affiliate_id INT UNSIGNED NOT NULL,
-            referred_client_id INT UNSIGNED NOT NULL,
-            status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            approved_at DATETIME NULL,
-            INDEX idx_affiliate (affiliate_id),
-            INDEX idx_referred (referred_client_id),
-            INDEX idx_status (status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-        
-        "CREATE TABLE IF NOT EXISTS affiliate_commissions (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            affiliate_id INT UNSIGNED NOT NULL,
-            referral_id INT UNSIGNED NULL,
-            order_id INT UNSIGNED NULL,
-            invoice_id INT UNSIGNED NULL,
-            amount DECIMAL(15,2) NOT NULL,
-            commission_rate DECIMAL(5,2) NOT NULL,
-            commission_amount DECIMAL(15,2) NOT NULL,
-            status ENUM('pending', 'approved', 'paid', 'cancelled') DEFAULT 'pending',
-            description VARCHAR(255),
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            approved_at DATETIME NULL,
-            paid_at DATETIME NULL,
-            INDEX idx_affiliate (affiliate_id),
-            INDEX idx_referral (referral_id),
-            INDEX idx_order (order_id),
-            INDEX idx_status (status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-        
-        "CREATE TABLE IF NOT EXISTS affiliate_withdrawals (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            affiliate_id INT UNSIGNED NOT NULL,
-            amount DECIMAL(15,2) NOT NULL,
-            payment_method VARCHAR(50) NOT NULL,
-            payment_details TEXT,
-            status ENUM('pending', 'processing', 'completed', 'rejected') DEFAULT 'pending',
-            admin_notes TEXT,
-            processed_by INT UNSIGNED NULL,
-            processed_at DATETIME NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_affiliate (affiliate_id),
-            INDEX idx_status (status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-    ];
-    
-    foreach ($tables as $sql) {
-        try {
-            $db->exec($sql);
-        } catch (Throwable $ex) {
-            // Devam et
-        }
-    }
-    
-    // Varsayılan ayarları ekle
-    $settings = [
-        ['affiliate_enabled', '1'],
-        ['affiliate_auto_approve', '0'],
-        ['affiliate_default_commission', '10'],
-        ['affiliate_commission_type', 'percentage'],
-        ['affiliate_min_withdrawal', '100'],
-        ['affiliate_cookie_days', '30'],
-        ['affiliate_require_approval', '1']
-    ];
-    
-    foreach ($settings as $setting) {
-        try {
-            $db->prepare("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES (?, ?)")
-               ->execute($setting);
-        } catch (Throwable $ex) {
-            // Devam et
-        }
-    }
-}
-ensureAffiliateTables();
-
-// Affiliate sistemi aktif mi?
-$affiliateEnabled = Settings::get('affiliate_enabled', '1') === '1';
-if (!$affiliateEnabled) {
-    $pageTitle = 'Satış Ortaklığı - Kapalı';
-}
-
-// Mevcut affiliate bilgilerini al
-$affiliate = Affiliate::getByClientId($clientId);
-$stats = $affiliate ? Affiliate::getStats($affiliate['id']) : [];
-
-$message = '';
-$messageType = 'success';
-
-// Form işlemleri
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $affiliateEnabled) {
-    // Affiliate başvurusu
-    if (isset($_POST['apply_affiliate']) && !$affiliate) {
-        $paymentMethod = $_POST['payment_method'] ?? 'bank_transfer';
-        $paymentDetails = trim($_POST['payment_details'] ?? '');
-        
-        if (empty($paymentDetails)) {
-            $message = 'Lütfen ödeme bilgilerinizi girin.';
-            $messageType = 'error';
-        } else {
-            $affiliateId = Affiliate::register($clientId, [
-                'payment_method' => $paymentMethod,
-                'payment_details' => $paymentDetails
-            ]);
-            
-            if ($affiliateId) {
-                $affiliate = Affiliate::getByClientId($clientId);
-                $stats = Affiliate::getStats($affiliate['id']);
-                $message = Settings::get('affiliate_auto_approve', '0') === '1' 
-                    ? 'Satış ortaklığı hesabınız başarıyla oluşturuldu!' 
-                    : 'Başvurunuz alındı. Onay sonrası hesabınız aktifleştirilecektir.';
-            } else {
-                $message = 'Başvuru sırasında bir hata oluştu.';
-                $messageType = 'error';
-            }
-        }
-    }
-    
-    // Ödeme bilgilerini güncelle
-    if (isset($_POST['update_payment']) && $affiliate) {
-        $paymentMethod = $_POST['payment_method'] ?? 'bank_transfer';
-        $paymentDetails = trim($_POST['payment_details'] ?? '');
-        
-        Database::query(
-            "UPDATE affiliates SET payment_method = ?, payment_details = ? WHERE id = ?",
-            [$paymentMethod, $paymentDetails, $affiliate['id']]
-        );
-        
-        $affiliate = Affiliate::getByClientId($clientId);
-        $message = 'Ödeme bilgileriniz güncellendi.';
-    }
-    
-    // Çekim talebi
-    if (isset($_POST['request_withdrawal']) && $affiliate && $affiliate['status'] === 'active') {
-        $amount = (float)($_POST['withdrawal_amount'] ?? 0);
-        $result = Affiliate::requestWithdrawal($affiliate['id'], $amount);
-        
-        $message = $result['message'];
-        $messageType = $result['success'] ? 'success' : 'error';
-        
-        if ($result['success']) {
-            $affiliate = Affiliate::getByClientId($clientId);
-            $stats = Affiliate::getStats($affiliate['id']);
-        }
-    }
-}
-
-// Komisyon geçmişi
-$commissions = [];
-$withdrawals = [];
-if ($affiliate) {
-    $commissions = Database::fetchAll(
-        "SELECT * FROM affiliate_commissions WHERE affiliate_id = ? ORDER BY created_at DESC LIMIT 10",
-        [$affiliate['id']]
-    );
-    $withdrawals = Database::fetchAll(
-        "SELECT * FROM affiliate_withdrawals WHERE affiliate_id = ? ORDER BY created_at DESC LIMIT 10",
-        [$affiliate['id']]
-    );
-}
-
-// Referanslar
-$referrals = [];
-if ($affiliate) {
-    $referrals = Database::fetchAll(
-        "SELECT ar.*, c.first_name, c.last_name, c.email, c.created_at as client_created
-         FROM affiliate_referrals ar
-         JOIN clients c ON ar.referred_client_id = c.id
-         WHERE ar.affiliate_id = ?
-         ORDER BY ar.created_at DESC LIMIT 20",
-        [$affiliate['id']]
-    );
-}
-
 include 'includes/header.php';
 ?>
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
 <style>
-/* Affiliate Sayfası */
-.affiliate-page {
-    animation: fadeIn 0.4s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Alert */
-.alert {
-    padding: 16px 20px;
-    border-radius: 12px;
-    margin-bottom: 24px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.alert-success {
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    color: #6ee7b7;
-}
-
-.alert-error {
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: #fca5a5;
-}
-
-.alert-warning {
-    background: rgba(245, 158, 11, 0.15);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-    color: #fcd34d;
-}
-
-/* Hero Section */
-.affiliate-hero {
-    background: linear-gradient(135deg, rgba(36, 116, 245, 0.2) 0%, rgba(75, 145, 250, 0.15) 50%, rgba(236, 72, 153, 0.1) 100%);
-    border: 1px solid rgba(36, 116, 245, 0.2);
-    border-radius: 20px;
-    padding: 40px;
-    margin-bottom: 30px;
-    position: relative;
-    overflow: hidden;
-}
-
-.affiliate-hero::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -20%;
-    width: 400px;
-    height: 400px;
-    background: radial-gradient(circle, rgba(75, 145, 250, 0.1) 0%, transparent 70%);
-    animation: float 15s ease-in-out infinite;
-}
-
-@keyframes float {
-    0%, 100% { transform: translate(0, 0); }
-    50% { transform: translate(-30px, 30px); }
-}
-
-.affiliate-hero-content {
-    position: relative;
-    z-index: 1;
-}
-
-.affiliate-hero h1 {
-    font-size: 32px;
-    font-weight: 800;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.affiliate-hero h1 i {
-    color: var(--primary-light);
-}
-
-.affiliate-hero p {
-    font-size: 16px;
-    color: var(--text-muted);
-    max-width: 600px;
-    line-height: 1.7;
-}
-
-/* Status Badge */
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    border-radius: 30px;
-    font-size: 13px;
-    font-weight: 600;
-    margin-top: 20px;
-}
-
-.status-badge.active {
-    background: rgba(16, 185, 129, 0.15);
-    color: #6ee7b7;
-}
-
-.status-badge.pending {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fcd34d;
-}
-
-.status-badge.suspended {
-    background: rgba(239, 68, 68, 0.15);
-    color: #fca5a5;
-}
-
-/* Stats Grid */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
-}
-
-.stat-card {
-    background: var(--card-bg);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 16px;
-    padding: 24px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    transition: all 0.3s;
-}
-
-.stat-card:hover {
-    transform: translateY(-5px);
-    border-color: rgba(36, 116, 245, 0.3);
-}
-
-.stat-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-}
-
-.stat-icon.purple { background: linear-gradient(135deg, rgba(75, 145, 250, 0.2), rgba(36, 116, 245, 0.2)); color: #7fb0fc; }
-.stat-icon.blue { background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2)); color: #60a5fa; }
-.stat-icon.green { background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2)); color: #6ee7b7; }
-.stat-icon.orange { background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.2)); color: #fcd34d; }
-.stat-icon.pink { background: linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(219, 39, 119, 0.2)); color: #f472b6; }
-
-.stat-info h4 {
-    font-size: 28px;
-    font-weight: 700;
-    margin-bottom: 4px;
-}
-
-.stat-info p {
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-/* Referral Link Box */
-.referral-link-box {
-    background: var(--card-bg);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 16px;
-    padding: 24px;
-    margin-bottom: 30px;
-}
-
-.referral-link-box h3 {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.referral-link-input {
-    display: flex;
-    gap: 12px;
-}
-
-.referral-link-input input {
-    flex: 1;
-    padding: 14px 18px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 10px;
-    color: var(--primary-light);
-    font-size: 14px;
-    font-family: monospace;
-}
-
-.btn-copy {
-    padding: 14px 24px;
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-    border: none;
-    border-radius: 10px;
-    color: white;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.3s;
-}
-
-.btn-copy:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(36, 116, 245, 0.3);
-}
-
-.btn-copy.copied {
-    background: linear-gradient(135deg, var(--success), #059669);
-}
-
-/* Content Grid */
-.content-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 30px;
-}
-
-@media (max-width: 1024px) {
-    .content-grid {
-        grid-template-columns: 1fr;
+    /* ==========================================
+       Satış ortaklığı - or
+       Genel bileşenler panel.css'ten gelir; burada
+       yalnızca bu sayfaya özgü olanlar var.
+       ========================================== */
+    .or-link {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border: 1px dashed var(--primary);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--primary) 7%, transparent);
     }
-}
 
-/* Content Card */
-.content-card {
-    background: var(--card-bg);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 16px;
-    overflow: hidden;
-}
+    .or-link code {
+        flex: 1;
+        min-width: 200px;
+        overflow-x: auto;
+        white-space: nowrap;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 14px;
+        color: var(--primary);
+    }
 
-.card-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
+    .or-kod {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-top: 10px;
+        font-size: 13px;
+        opacity: .75;
+    }
 
-.card-header h3 {
-    font-size: 16px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
+    .or-kod b {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 15px;
+        letter-spacing: .06em;
+    }
 
-.card-body {
-    padding: 24px;
-}
+    .or-izgara {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 20px;
+        align-items: start;
+    }
 
-/* Table */
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-}
+    .or-alan {
+        margin-bottom: 14px;
+    }
 
-.data-table th {
-    text-align: left;
-    padding: 12px 16px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-}
+    .or-alan label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 12.5px;
+        font-weight: 600;
+        opacity: .8;
+    }
 
-.data-table td {
-    padding: 14px 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    font-size: 14px;
-}
+    .or-alan small {
+        display: block;
+        margin-top: 5px;
+        font-size: 11.5px;
+        opacity: .65;
+    }
 
-.data-table tr:last-child td {
-    border-bottom: none;
-}
+    .or-ozet {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+    }
 
-.data-table tr:hover td {
-    background: rgba(255,255,255,0.02);
-}
+    .or-ozet-kart {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 18px;
+        border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+        border-radius: 14px;
+        background: color-mix(in srgb, currentColor 3%, transparent);
+    }
 
-/* Apply Form */
-.apply-card {
-    max-width: 600px;
-    margin: 0 auto;
-}
+    .or-ozet-ikon {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 12px;
+        color: #fff;
+        font-size: 16px;
+    }
 
-.form-group {
-    margin-bottom: 24px;
-}
+    .or-ozet-ikon.cyan {
+        background: linear-gradient(135deg, #06b6d4, #0e7490);
+    }
 
-.form-group label {
-    display: block;
-    font-size: 14px;
-    font-weight: 600;
-    margin-bottom: 10px;
-    color: var(--text-secondary);
-}
+    .or-ozet-ikon.blue {
+        background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    }
 
-.form-control {
-    width: 100%;
-    padding: 14px 18px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 10px;
-    color: #fff;
-    font-size: 14px;
-    transition: all 0.3s;
-}
+    .or-ozet-ikon.yellow {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+    }
 
-.form-control:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(36, 116, 245, 0.2);
-}
+    .or-ozet-ikon.green {
+        background: linear-gradient(135deg, #10b981, #059669);
+    }
 
-textarea.form-control {
-    min-height: 120px;
-    resize: vertical;
-}
+    .or-ozet-kart b {
+        display: block;
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+        line-height: 1.25;
+    }
 
-select.form-control {
-    cursor: pointer;
-}
+    .or-ozet-kart small {
+        font-size: 12.5px;
+        opacity: .68;
+    }
 
-select.form-control option {
-    background: #1e293b;
-}
+    .or-bos {
+        padding: 44px 20px;
+        text-align: center;
+    }
 
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 14px 28px;
-    border-radius: 10px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-    transition: all 0.3s;
-    text-decoration: none;
-}
+    .or-bos i {
+        font-size: 30px;
+        opacity: .25;
+    }
 
-.btn-primary {
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-    color: white;
-}
+    .or-bos p {
+        max-width: 380px;
+        margin: 12px auto 0;
+        font-size: 13.5px;
+        line-height: 1.6;
+        opacity: .7;
+    }
 
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(36, 116, 245, 0.3);
-}
+    .or-bakiye {
+        padding: 16px;
+        margin-bottom: 14px;
+        border-radius: 11px;
+        background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+        color: #fff;
+    }
 
-.btn-success {
-    background: linear-gradient(135deg, var(--success), #059669);
-    color: white;
-}
+    .or-bakiye span {
+        display: block;
+        font-size: 12px;
+        opacity: .85;
+    }
 
-.btn-outline {
-    background: transparent;
-    border: 1px solid rgba(255,255,255,0.2);
-    color: #fff;
-}
+    .or-bakiye b {
+        display: block;
+        margin-top: 2px;
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -.02em;
+    }
 
-/* Features */
-.features-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
-    margin-top: 30px;
-}
+    .or-bakiye-alt {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 12px;
+        padding-top: 11px;
+        border-top: 1px solid rgba(255, 255, 255, .22);
+        font-size: 12px;
+    }
 
-.feature-item {
-    display: flex;
-    gap: 16px;
-    padding: 20px;
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 12px;
-}
+    .or-adim {
+        display: flex;
+        gap: 13px;
+        padding: 13px 0;
+        border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+    }
 
-.feature-icon {
-    width: 48px;
-    height: 48px;
-    background: linear-gradient(135deg, rgba(36, 116, 245, 0.2), rgba(75, 145, 250, 0.2));
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    color: var(--primary-light);
-    flex-shrink: 0;
-}
+    .or-adim:last-child {
+        border-bottom: none;
+    }
 
-.feature-text h4 {
-    font-size: 15px;
-    font-weight: 600;
-    margin-bottom: 4px;
-}
+    .or-adim-no {
+        width: 27px;
+        height: 27px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        border-radius: 50%;
+        background: var(--primary);
+        color: #fff;
+        font-size: 12.5px;
+        font-weight: 700;
+    }
 
-.feature-text p {
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.5;
-}
+    .or-adim b {
+        display: block;
+        font-size: 14px;
+    }
 
-/* Disabled State */
-.disabled-state {
-    text-align: center;
-    padding: 80px 40px;
-}
+    .or-adim p {
+        margin: 3px 0 0;
+        font-size: 13px;
+        line-height: 1.55;
+        opacity: .72;
+    }
 
-.disabled-state i {
-    font-size: 64px;
-    color: var(--text-muted);
-    margin-bottom: 24px;
-}
+    .or-oran {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+        padding: 13px 16px;
+        margin-bottom: 16px;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--primary) 9%, transparent);
+    }
 
-.disabled-state h2 {
-    font-size: 24px;
-    margin-bottom: 12px;
-}
+    .or-oran b {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--primary);
+    }
 
-.disabled-state p {
-    color: var(--text-muted);
-    font-size: 16px;
-}
+    .or-kapali {
+        max-width: 470px;
+        margin: 60px auto;
+        text-align: center;
+    }
 
-/* Empty State */
-.empty-state {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--text-muted);
-}
+    .or-kapali i {
+        font-size: 40px;
+        opacity: .3;
+    }
 
-.empty-state i {
-    font-size: 40px;
-    margin-bottom: 16px;
-    opacity: 0.5;
-}
+    .or-kapali h2 {
+        margin: 16px 0 8px;
+        font-size: 19px;
+    }
 
-/* Withdrawal Form */
-.withdrawal-form {
-    display: flex;
-    gap: 12px;
-    margin-top: 16px;
-}
+    .or-kapali p {
+        font-size: 14px;
+        line-height: 1.6;
+        opacity: .7;
+    }
 
-.withdrawal-form input {
-    flex: 1;
-    padding: 12px 16px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
-    color: #fff;
-    font-size: 14px;
-}
-
-.withdrawal-form button {
-    padding: 12px 20px;
-    background: var(--success);
-    border: none;
-    border-radius: 8px;
-    color: white;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.withdrawal-form button:hover {
-    background: #059669;
-}
+    @media (max-width: 980px) {
+        .or-izgara {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
 </style>
 
-<div class="affiliate-page">
-    
-    <?php if ($message): ?>
-        <div class="alert alert-<?= $messageType ?>">
-            <i class="fas fa-<?= $messageType === 'success' ? 'check-circle' : ($messageType === 'error' ? 'exclamation-circle' : 'info-circle') ?>"></i>
-            <?= htmlspecialchars($message) ?>
-        </div>
-    <?php endif; ?>
-    
-    <?php if (!$affiliateEnabled): ?>
-        <!-- Sistem Kapalı -->
-        <div class="disabled-state">
-            <i class="fas fa-lock"></i>
-            <h2>Satış Ortaklığı Sistemi Kapalı</h2>
-            <p>Satış ortaklığı sistemi şu anda aktif değil. Lütfen daha sonra tekrar deneyin.</p>
-        </div>
-        
-    <?php elseif (!$affiliate): ?>
-        <!-- Başvuru Formu -->
-        <div class="affiliate-hero">
-            <div class="affiliate-hero-content">
-                <h1><i class="fas fa-handshake"></i> Satış Ortaklığı Programı</h1>
-                <p>Referans linkinizi paylaşarak yeni müşteriler kazandırın ve her satıştan komisyon kazanın. Hemen başvurun ve kazanmaya başlayın!</p>
+<div class="page-header">
+    <h1><i class="fas fa-handshake"></i> Satış Ortaklığı</h1>
+    <p>Referanslarınızdan kazandığınız komisyonlar ve çekim talepleriniz</p>
+</div>
+<?php if ($mesaj): ?>
+    <div class="alert alert-<?= $mesaj['tip'] === 'error' ? 'danger' : ($mesaj['tip'] === 'uyari' ? 'warning' : 'success') ?>">
+        <i class="fas fa-<?= $mesaj['tip'] === 'success' ? 'circle-check' : 'circle-exclamation' ?>"></i>
+        <?= htmlspecialchars($mesaj['metin']) ?>
+    </div>
+<?php endif; ?>
+
+<?php if (!$acik): ?>
+
+    <div class="or-kapali">
+        <i class="fas fa-handshake"></i>
+        <h2>Satış ortaklığı programı kapalı</h2>
+        <p>Program şu anda yeni başvuru almıyor. Daha sonra tekrar bakabilirsiniz.</p>
+    </div>
+
+<?php elseif (!$ortak): ?>
+
+    <!-- ============ Başvuru ============ -->
+    <div class="or-izgara">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-handshake"></i> Satış ortaklığı programı</h3>
+            </div>
+            <div class="card-body">
+                <div class="or-oran">
+                    <b>%<?= rtrim(rtrim(number_format(
+                        (float) Settings::get('affiliate_default_commission', '10'), 2, ',', '.'), '0'), ',') ?></b>
+                    <span>her ödenen faturadan komisyon</span>
+                </div>
+
+                <div class="or-adim">
+                    <span class="or-adim-no">1</span>
+                    <div>
+                        <b>Başvurun</b>
+                        <p>Ödemeyi nereye almak istediğinizi yazın. Başvurunuz onaylandığında
+                            size özel bir referans bağlantısı oluşturulur.</p>
+                    </div>
+                </div>
+                <div class="or-adim">
+                    <span class="or-adim-no">2</span>
+                    <div>
+                        <b>Bağlantını paylaş</b>
+                        <p>Bağlantınızdan gelen ziyaretçi kayıt olduğunda size bağlanır.
+                            Ziyaret, kayıt ve sipariş sayıları bu sayfada görünür.</p>
+                    </div>
+                </div>
+                <div class="or-adim">
+                    <span class="or-adim-no">3</span>
+                    <div>
+                        <b>Kazan</b>
+                        <p>Referansınızın ödediği her faturadan komisyon bakiyenize eklenir.
+                            Bakiyeniz alt sınırı geçtiğinde çekim talebi oluşturabilirsiniz.</p>
+                    </div>
+                </div>
             </div>
         </div>
-        
-        <div class="content-card apply-card">
+
+        <div class="card">
             <div class="card-header">
-                <h3><i class="fas fa-user-plus"></i> Satış Ortağı Başvurusu</h3>
+                <h3><i class="fas fa-user-plus"></i> Başvuru formu</h3>
             </div>
             <div class="card-body">
                 <form method="POST">
-                    <input type="hidden" name="apply_affiliate" value="1">
-                    
-                    <div class="form-group">
-                        <label>Ödeme Yöntemi</label>
-                        <select name="payment_method" class="form-control" required>
-                            <option value="bank_transfer">Banka Havalesi / EFT</option>
-                            <option value="papara">Papara</option>
-                            <option value="paypal">PayPal</option>
+                    <?= Guvenlik::alan() ?>
+                    <input type="hidden" name="basvur" value="1">
+
+                    <div class="or-alan">
+                        <label for="payment_method">Ödeme yöntemi</label>
+                        <select name="payment_method" id="payment_method" class="form-control">
+                            <?php foreach (OR_ODEME_YONTEMLERI as $deger => $ad): ?>
+                                <option value="<?= $deger ?>"><?= $ad ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
-                    
-                    <div class="form-group">
-                        <label>Ödeme Bilgileri</label>
-                        <textarea name="payment_details" class="form-control" required 
-                                  placeholder="Banka hesap bilgilerinizi girin (IBAN, Hesap Sahibi vb.)"></textarea>
-                        <small style="color: var(--text-muted); margin-top: 8px; display: block;">
-                            Komisyonlarınızın ödeneceği hesap bilgilerini eksiksiz girin.
-                        </small>
+
+                    <div class="or-alan">
+                        <label for="payment_details">Ödeme bilgileri</label>
+                        <textarea name="payment_details" id="payment_details" class="form-control"
+                            required maxlength="500"
+                            placeholder="Ad soyad ve IBAN"></textarea>
+                        <small>Komisyon ödemeleriniz buraya yapılır. Sonradan değiştirebilirsiniz.</small>
                     </div>
-                    
-                    <button type="submit" class="btn btn-primary" style="width: 100%;">
-                        <i class="fas fa-paper-plane"></i> Başvuruyu Gönder
+
+                    <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">
+                        <i class="fas fa-paper-plane"></i> Başvuruyu gönder
                     </button>
                 </form>
             </div>
         </div>
-        
-        <!-- Özellikler -->
-        <div class="features-grid">
-            <div class="feature-item">
-                <div class="feature-icon"><i class="fas fa-percentage"></i></div>
-                <div class="feature-text">
-                    <h4>%<?= Settings::get('affiliate_default_commission', '10') ?> Komisyon</h4>
-                    <p>Her satıştan komisyon kazanın</p>
-                </div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon"><i class="fas fa-clock"></i></div>
-                <div class="feature-text">
-                    <h4><?= Settings::get('affiliate_cookie_days', '30') ?> Gün Takip</h4>
-                    <p>Referanslarınız <?= Settings::get('affiliate_cookie_days', '30') ?> gün boyunca takip edilir</p>
-                </div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon"><i class="fas fa-money-bill-wave"></i></div>
-                <div class="feature-text">
-                    <h4>Kolay Çekim</h4>
-                    <p>Minimum <?= number_format((float)Settings::get('affiliate_min_withdrawal', '100'), 0) ?> TL'den itibaren çekim yapın</p>
-                </div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon"><i class="fas fa-chart-line"></i></div>
-                <div class="feature-text">
-                    <h4>Detaylı Raporlar</h4>
-                    <p>Ziyaretçi, kayıt ve satış istatistiklerinizi takip edin</p>
-                </div>
-            </div>
+    </div>
+
+<?php else: ?>
+
+    <?php
+    [$durumAd, $durumSinif] = OR_DURUMLAR[$ortak['status']] ?? [(string) $ortak['status'], 'info'];
+    $referansLinki = Affiliate::getReferralLink((string) $ortak['affiliate_code']);
+    $etkin = $ortak['status'] === 'active';
+    ?>
+
+    <!-- ============ Durum + referans bağlantısı ============ -->
+    <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+            <h3><i class="fas fa-link"></i> Referans bağlantınız</h3>
+            <span class="badge badge-<?= $durumSinif ?>"><?= $durumAd ?></span>
         </div>
-        
-    <?php else: ?>
-        <!-- Affiliate Dashboard -->
-        <div class="affiliate-hero">
-            <div class="affiliate-hero-content">
-                <h1><i class="fas fa-handshake"></i> Satış Ortaklığı Paneli</h1>
-                <p>Referans linkinizi paylaşın, yeni müşteriler kazandırın ve komisyon kazanın!</p>
-                
-                <span class="status-badge <?= $affiliate['status'] ?>">
-                    <?php if ($affiliate['status'] === 'active'): ?>
-                        <i class="fas fa-check-circle"></i> Aktif Hesap
-                    <?php elseif ($affiliate['status'] === 'pending'): ?>
-                        <i class="fas fa-clock"></i> Onay Bekliyor
-                    <?php elseif ($affiliate['status'] === 'suspended'): ?>
-                        <i class="fas fa-ban"></i> Askıya Alındı
-                    <?php endif; ?>
-                </span>
-            </div>
-        </div>
-        
-        <!-- Stats -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon cyan"><i class="fas fa-eye"></i></div>
-                <div class="stat-info">
-                    <h4><?= number_format($stats['total_visits'] ?? 0) ?></h4>
-                    <p>Toplam Ziyaret</p>
+        <div class="card-body">
+            <?php if (!$etkin): ?>
+                <div class="alert alert-warning" style="margin-bottom:14px">
+                    <i class="fas fa-circle-exclamation"></i>
+                    <?= $ortak['status'] === 'pending'
+                        ? 'Başvurunuz inceleniyor. Onaylanana kadar bağlantınızdan gelen kayıtlar işlenmez.'
+                        : 'Hesabınız şu anda etkin değil. Ayrıntı için destek talebi açabilirsiniz.' ?>
                 </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon blue"><i class="fas fa-user-plus"></i></div>
-                <div class="stat-info">
-                    <h4><?= number_format($stats['total_signups'] ?? 0) ?></h4>
-                    <p>Kayıt Olan</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon orange"><i class="fas fa-shopping-cart"></i></div>
-                <div class="stat-info">
-                    <h4><?= number_format($stats['total_orders'] ?? 0) ?></h4>
-                    <p>Sipariş</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon green"><i class="fas fa-coins"></i></div>
-                <div class="stat-info">
-                    <h4><?= number_format($stats['total_earnings'] ?? 0, 2) ?> ₺</h4>
-                    <p>Toplam Kazanç</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon pink"><i class="fas fa-wallet"></i></div>
-                <div class="stat-info">
-                    <h4><?= number_format($stats['balance'] ?? 0, 2) ?> ₺</h4>
-                    <p>Mevcut Bakiye</p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Referral Link -->
-        <?php if ($affiliate['status'] === 'active'): ?>
-        <div class="referral-link-box">
-            <h3><i class="fas fa-link"></i> Referans Linkiniz</h3>
-            <div class="referral-link-input">
-                <input type="text" id="referralLink" value="<?= htmlspecialchars(Affiliate::getReferralLink($affiliate['affiliate_code'])) ?>" readonly>
-                <button class="btn-copy" onclick="copyLink()">
+            <?php endif; ?>
+
+            <div class="or-link">
+                <code id="or-baglanti"><?= htmlspecialchars($referansLinki) ?></code>
+                <button type="button" class="btn btn-primary btn-sm" id="or-kopyala">
                     <i class="fas fa-copy"></i> Kopyala
                 </button>
             </div>
-            <p style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">
-                <strong>Affiliate Kodunuz:</strong> <?= htmlspecialchars($affiliate['affiliate_code']) ?> 
-                | <strong>Komisyon Oranı:</strong> %<?= number_format((float)$affiliate['commission_rate'], 0) ?>
-            </p>
-        </div>
-        <?php endif; ?>
-        
-        <div class="content-grid">
-            <div>
-                <!-- Referanslar -->
-                <div class="content-card" style="margin-bottom: 30px;">
-                    <div class="card-header">
-                        <h3><i class="fas fa-users"></i> Referanslarım</h3>
-                    </div>
-                    <div class="card-body" style="padding: 0;">
-                        <?php if (empty($referrals)): ?>
-                            <div class="empty-state">
-                                <i class="fas fa-user-friends"></i>
-                                <p>Henüz referansınız bulunmuyor</p>
-                            </div>
-                        <?php else: ?>
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Müşteri</th>
-                                        <th>Kayıt Tarihi</th>
-                                        <th>Durum</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($referrals as $ref): ?>
-                                    <tr>
-                                        <td>
-                                            <strong><?= htmlspecialchars($ref['first_name'] . ' ' . $ref['last_name']) ?></strong><br>
-                                            <small style="color: var(--text-muted);"><?= htmlspecialchars($ref['email']) ?></small>
-                                        </td>
-                                        <td><?= date('d.m.Y H:i', strtotime($ref['client_created'])) ?></td>
-                                        <td>
-                                            <span class="badge badge-<?= $ref['status'] === 'approved' ? 'success' : 'warning' ?>">
-                                                <?= $ref['status'] === 'approved' ? 'Onaylı' : 'Beklemede' ?>
-                                            </span>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                
-                <!-- Komisyonlar -->
-                <div class="content-card">
-                    <div class="card-header">
-                        <h3><i class="fas fa-money-bill-wave"></i> Komisyon Geçmişi</h3>
-                    </div>
-                    <div class="card-body" style="padding: 0;">
-                        <?php if (empty($commissions)): ?>
-                            <div class="empty-state">
-                                <i class="fas fa-coins"></i>
-                                <p>Henüz komisyon kaydınız bulunmuyor</p>
-                            </div>
-                        <?php else: ?>
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Açıklama</th>
-                                        <th>Tutar</th>
-                                        <th>Komisyon</th>
-                                        <th>Durum</th>
-                                        <th>Tarih</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($commissions as $comm): ?>
-                                    <tr>
-                                        <td><?= htmlspecialchars($comm['description']) ?></td>
-                                        <td><?= number_format((float)$comm['amount'], 2) ?> ₺</td>
-                                        <td><strong style="color: var(--success);">+<?= number_format((float)$comm['commission_amount'], 2) ?> ₺</strong></td>
-                                        <td>
-                                            <span class="badge badge-<?= $comm['status'] === 'paid' ? 'success' : ($comm['status'] === 'approved' ? 'info' : 'warning') ?>">
-                                                <?= match($comm['status']) {
-                                                    'paid' => 'Ödendi',
-                                                    'approved' => 'Onaylı',
-                                                    'pending' => 'Beklemede',
-                                                    default => $comm['status']
-                                                } ?>
-                                            </span>
-                                        </td>
-                                        <td><?= date('d.m.Y', strtotime($comm['created_at'])) ?></td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-            
-            <div>
-                <!-- Çekim Talebi -->
-                <?php if ($affiliate['status'] === 'active'): ?>
-                <div class="content-card" style="margin-bottom: 30px;">
-                    <div class="card-header">
-                        <h3><i class="fas fa-wallet"></i> Bakiye Çekimi</h3>
-                    </div>
-                    <div class="card-body">
-                        <div style="text-align: center; margin-bottom: 20px;">
-                            <div style="font-size: 36px; font-weight: 700; color: var(--success);">
-                                <?= number_format($stats['balance'] ?? 0, 2) ?> ₺
-                            </div>
-                            <p style="color: var(--text-muted); font-size: 14px;">Çekilebilir Bakiye</p>
-                        </div>
-                        
-                        <form method="POST" class="withdrawal-form">
-                            <input type="hidden" name="request_withdrawal" value="1">
-                            <input type="number" name="withdrawal_amount" placeholder="Tutar" step="0.01" 
-                                   min="<?= $affiliate['min_withdrawal'] ?>" max="<?= $stats['balance'] ?? 0 ?>" required>
-                            <button type="submit" <?= ($stats['balance'] ?? 0) < $affiliate['min_withdrawal'] ? 'disabled' : '' ?>>
-                                <i class="fas fa-paper-plane"></i> Talep Et
-                            </button>
-                        </form>
-                        
-                        <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px; text-align: center;">
-                            Minimum çekim: <?= number_format((float)$affiliate['min_withdrawal'], 0) ?> ₺
-                        </p>
-                    </div>
-                </div>
-                <?php endif; ?>
-                
-                <!-- Ödeme Bilgileri -->
-                <div class="content-card" style="margin-bottom: 30px;">
-                    <div class="card-header">
-                        <h3><i class="fas fa-credit-card"></i> Ödeme Bilgileri</h3>
-                    </div>
-                    <div class="card-body">
-                        <form method="POST">
-                            <input type="hidden" name="update_payment" value="1">
-                            
-                            <div class="form-group">
-                                <label>Ödeme Yöntemi</label>
-                                <select name="payment_method" class="form-control">
-                                    <option value="bank_transfer" <?= $affiliate['payment_method'] === 'bank_transfer' ? 'selected' : '' ?>>Banka Havalesi</option>
-                                    <option value="papara" <?= $affiliate['payment_method'] === 'papara' ? 'selected' : '' ?>>Papara</option>
-                                    <option value="paypal" <?= $affiliate['payment_method'] === 'paypal' ? 'selected' : '' ?>>PayPal</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label>Ödeme Detayları</label>
-                                <textarea name="payment_details" class="form-control" rows="3"><?= htmlspecialchars($affiliate['payment_details']) ?></textarea>
-                            </div>
-                            
-                            <button type="submit" class="btn btn-outline" style="width: 100%;">
-                                <i class="fas fa-save"></i> Güncelle
-                            </button>
-                        </form>
-                    </div>
-                </div>
-                
-                <!-- Çekim Geçmişi -->
-                <div class="content-card">
-                    <div class="card-header">
-                        <h3><i class="fas fa-history"></i> Çekim Geçmişi</h3>
-                    </div>
-                    <div class="card-body" style="padding: 0;">
-                        <?php if (empty($withdrawals)): ?>
-                            <div class="empty-state">
-                                <i class="fas fa-receipt"></i>
-                                <p>Çekim talebiniz yok</p>
-                            </div>
-                        <?php else: ?>
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Tutar</th>
-                                        <th>Durum</th>
-                                        <th>Tarih</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($withdrawals as $wd): ?>
-                                    <tr>
-                                        <td><strong><?= number_format((float)$wd['amount'], 2) ?> ₺</strong></td>
-                                        <td>
-                                            <span class="badge badge-<?= match($wd['status']) {
-                                                'completed' => 'success',
-                                                'processing' => 'info',
-                                                'rejected' => 'danger',
-                                                default => 'warning'
-                                            } ?>">
-                                                <?= match($wd['status']) {
-                                                    'completed' => 'Tamamlandı',
-                                                    'processing' => 'İşleniyor',
-                                                    'rejected' => 'Reddedildi',
-                                                    default => 'Beklemede'
-                                                } ?>
-                                            </span>
-                                        </td>
-                                        <td><?= date('d.m.Y', strtotime($wd['created_at'])) ?></td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-    <?php endif; ?>
-</div>
 
-<script>
-function copyLink() {
-    const input = document.getElementById('referralLink');
-    input.select();
-    document.execCommand('copy');
-    
-    const btn = document.querySelector('.btn-copy');
-    btn.classList.add('copied');
-    btn.innerHTML = '<i class="fas fa-check"></i> Kopyalandı!';
-    
-    setTimeout(() => {
-        btn.classList.remove('copied');
-        btn.innerHTML = '<i class="fas fa-copy"></i> Kopyala';
-    }, 2000);
-}
-</script>
+            <span class="or-kod">
+                Referans kodunuz: <b><?= htmlspecialchars((string) $ortak['affiliate_code']) ?></b>
+            </span>
+        </div>
+    </div>
+
+    <!-- ============ Özet ============ -->
+    <div class="or-ozet">
+        <div class="or-ozet-kart">
+                <span class="or-ozet-ikon cyan"><i class="fas fa-eye"></i></span>
+                <span>
+                    <b><?= number_format((int) ($sayilar['total_visits'] ?? 0), 0, ',', '.') ?></b>
+                    <small>Ziyaret</small>
+                </span>
+            </div>
+        <div class="or-ozet-kart">
+                <span class="or-ozet-ikon blue"><i class="fas fa-user-plus"></i></span>
+                <span>
+                    <b><?= number_format((int) ($sayilar['total_signups'] ?? 0), 0, ',', '.') ?></b>
+                    <small>Kayıt</small>
+                </span>
+            </div>
+        <div class="or-ozet-kart">
+                <span class="or-ozet-ikon yellow"><i class="fas fa-cart-shopping"></i></span>
+                <span>
+                    <b><?= number_format((int) ($sayilar['total_orders'] ?? 0), 0, ',', '.') ?></b>
+                    <small>Sipariş</small>
+                </span>
+            </div>
+        <div class="or-ozet-kart">
+                <span class="or-ozet-ikon green"><i class="fas fa-coins"></i></span>
+                <span>
+                    <b><?= orPara($sayilar['total_earnings'] ?? 0) ?></b>
+                    <small>Toplam kazanç</small>
+                </span>
+            </div>
+    </div>
+
+    <div class="or-izgara">
+        <div>
+            <!-- ============ Referanslar ============ -->
+            <div class="card" style="margin-bottom:20px">
+                <div class="card-header">
+                    <h3><i class="fas fa-users"></i> Referanslarım</h3>
+                    <span><?= count($referanslar) ?></span>
+                </div>
+                <?php if (!$referanslar): ?>
+                    <div class="or-bos">
+                        <i class="fas fa-users"></i>
+                        <p>Henüz referansınız yok. Bağlantınızı paylaşmaya başlayın.</p>
+                    </div>
+                <?php else: ?>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Müşteri</th>
+                                <th>Kayıt tarihi</th>
+                                <th>Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($referanslar as $r): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?= htmlspecialchars(trim(
+                                            (string) $r['first_name'] . ' ' . (string) $r['last_name'])) ?></strong><br>
+                                        <small><?= htmlspecialchars(orEpostaGizle((string) $r['email'])) ?></small>
+                                    </td>
+                                    <td><?= date('d.m.Y', strtotime((string) $r['created_at'])) ?></td>
+                                    <td>
+                                        <span class="badge badge-<?= $r['status'] === 'approved' ? 'success' : 'warning' ?>">
+                                            <?= $r['status'] === 'approved' ? 'Onaylı' : 'Bekliyor' ?>
+                                        </span>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </div>
+
+            <!-- ============ Komisyonlar ============ -->
+            <div class="card" style="margin-bottom:20px">
+                <div class="card-header">
+                    <h3><i class="fas fa-money-bill-wave"></i> Komisyon geçmişi</h3>
+                    <?php if (($sayilar['pending_commissions'] ?? 0) > 0): ?>
+                        <span><?= orPara($sayilar['pending_commissions']) ?> onay bekliyor</span>
+                    <?php endif; ?>
+                </div>
+                <?php if (!$komisyonlar): ?>
+                    <div class="or-bos">
+                        <i class="fas fa-money-bill-wave"></i>
+                        <p>Henüz komisyon kaydınız yok. Referansınız ilk ödemesini
+                            yaptığında burada görünür.</p>
+                    </div>
+                <?php else: ?>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Tarih</th>
+                                <th>Açıklama</th>
+                                <th>Komisyon</th>
+                                <th>Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($komisyonlar as $k):
+                                [$kAd, $kSinif] = OR_KOMISYON_DURUM[$k['status']] ?? [(string) $k['status'], 'info'];
+                                ?>
+                                <tr>
+                                    <td><?= date('d.m.Y', strtotime((string) $k['created_at'])) ?></td>
+                                    <td>
+                                        <?= htmlspecialchars((string) ($k['description'] ?: 'Komisyon')) ?><br>
+                                        <small><?= orPara($k['amount']) ?> tutarlı işlem
+                                            &middot; %<?= rtrim(rtrim(number_format(
+                                                (float) $k['commission_rate'], 2, ',', '.'), '0'), ',') ?></small>
+                                    </td>
+                                    <td><strong><?= orPara($k['commission_amount']) ?></strong></td>
+                                    <td><span class="badge badge-<?= $kSinif ?>"><?= $kAd ?></span></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </div>
+
+            <!-- ============ Çekimler ============ -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-wallet"></i> Çekim talepleri</h3>
+                    <span><?= orPara($sayilar['total_withdrawn'] ?? 0) ?> ödendi</span>
+                </div>
+                <?php if (!$cekimler): ?>
+                    <div class="or-bos">
+                        <i class="fas fa-wallet"></i>
+                        <p>Henüz çekim talebiniz yok.</p>
+                    </div>
+                <?php else: ?>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Tarih</th>
+                                <th>Tutar</th>
+                                <th>Yöntem</th>
+                                <th>Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($cekimler as $c):
+                                [$cAd, $cSinif] = OR_CEKIM_DURUM[$c['status']] ?? [(string) $c['status'], 'info'];
+                                ?>
+                                <tr>
+                                    <td><?= date('d.m.Y H:i', strtotime((string) $c['created_at'])) ?></td>
+                                    <td><strong><?= orPara($c['amount']) ?></strong></td>
+                                    <td><?= OR_ODEME_YONTEMLERI[$c['payment_method']]
+                                        ?? htmlspecialchars((string) $c['payment_method']) ?></td>
+                                    <td>
+                                        <span class="badge badge-<?= $cSinif ?>"><?= $cAd ?></span>
+                                        <?php if (!empty($c['admin_notes'])): ?>
+                                            <br><small><?= htmlspecialchars((string) $c['admin_notes']) ?></small>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- ============ Sağ sütun ============ -->
+        <div>
+            <div class="card" style="margin-bottom:20px">
+                <div class="card-body">
+                    <div class="or-bakiye">
+                        <span>Çekilebilir bakiye</span>
+                        <b><?= orPara($sayilar['balance'] ?? 0) ?></b>
+                        <div class="or-bakiye-alt">
+                            <span>En az çekim</span>
+                            <span><?= orPara($ortak['min_withdrawal']) ?></span>
+                        </div>
+                    </div>
+
+                    <?php if ($bekleyenCekim): ?>
+                        <div class="alert alert-warning">
+                            <i class="fas fa-hourglass-half"></i>
+                            <?= orPara($bekleyenCekim['amount']) ?> tutarlı talebiniz işleniyor.
+                            Sonuçlanmadan yeni talep oluşturamazsınız.
+                        </div>
+                    <?php elseif (!$etkin): ?>
+                        <div class="alert alert-warning">
+                            <i class="fas fa-circle-exclamation"></i>
+                            Hesabınız etkinleşince çekim talebi oluşturabilirsiniz.
+                        </div>
+                    <?php elseif ((float) ($sayilar['balance'] ?? 0) < (float) $ortak['min_withdrawal']): ?>
+                        <div class="alert alert-warning">
+                            <i class="fas fa-circle-info"></i>
+                            Çekim için en az <?= orPara($ortak['min_withdrawal']) ?> bakiye gerekiyor.
+                        </div>
+                    <?php else: ?>
+                        <form method="POST">
+                            <?= Guvenlik::alan() ?>
+                            <input type="hidden" name="cekim" value="1">
+
+                            <div class="or-alan">
+                                <label for="tutar">Çekmek istediğiniz tutar</label>
+                                <input type="text" name="tutar" id="tutar" class="form-control"
+                                    inputmode="decimal" required
+                                    placeholder="<?= number_format((float) $ortak['min_withdrawal'], 2, ',', '') ?>">
+                                <small>Ödeme, kayıtlı bilgilerinize yapılır.</small>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary"
+                                style="width:100%;justify-content:center">
+                                <i class="fas fa-paper-plane"></i> Çekim talebi oluştur
+                            </button>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-credit-card"></i> Ödeme bilgileri</h3>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <?= Guvenlik::alan() ?>
+                        <input type="hidden" name="odeme_kaydet" value="1">
+
+                        <div class="or-alan">
+                            <label for="yontem">Yöntem</label>
+                            <select name="payment_method" id="yontem" class="form-control">
+                                <?php foreach (OR_ODEME_YONTEMLERI as $deger => $ad): ?>
+                                    <option value="<?= $deger ?>"
+                                        <?= $ortak['payment_method'] === $deger ? 'selected' : '' ?>>
+                                        <?= $ad ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="or-alan">
+                            <label for="bilgi">Ödeme bilgileri</label>
+                            <textarea name="payment_details" id="bilgi" class="form-control"
+                                required maxlength="500"><?= htmlspecialchars(
+                                    (string) ($ortak['payment_details'] ?? '')) ?></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn-outline"
+                            style="width:100%;justify-content:center">
+                            Bilgileri güncelle
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('or-kopyala').addEventListener('click', function () {
+            var metin = document.getElementById('or-baglanti').textContent.trim();
+            var dugme = this;
+
+            var bitti = function () {
+                var eski = dugme.innerHTML;
+                dugme.innerHTML = '<i class="fas fa-check"></i> Kopyalandı';
+                setTimeout(function () { dugme.innerHTML = eski; }, 1600);
+            };
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(metin).then(bitti, function () { yedek(metin, bitti); });
+            } else {
+                yedek(metin, bitti);
+            }
+
+            /* http:// adresinde clipboard API kapalı olabiliyor */
+            function yedek(m, tamam) {
+                var a = document.createElement('textarea');
+                a.value = m;
+                a.style.position = 'fixed';
+                a.style.opacity = '0';
+                document.body.appendChild(a);
+                a.select();
+                try { document.execCommand('copy'); tamam(); } catch (e) { }
+                document.body.removeChild(a);
+            }
+        });
+    </script>
+
+<?php endif; ?>
 
 <?php include 'includes/footer.php'; ?>
-

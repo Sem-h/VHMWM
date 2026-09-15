@@ -630,6 +630,23 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
         html[data-client-theme="light"] .main-footer, html[data-client-theme="light"] .main-footer a, html[data-client-theme="light"] .footer-logo { color: #334155; }
         html[data-client-theme="light"] .theme-switch .fa-moon { display: none; }
         html[data-client-theme="light"] .theme-switch .fa-sun { display: block; }
+
+        /* Form alanları, rozetler ve uyarılar yalnızca koyu tema için
+           tanımlanmıştı; açık temada beyaz üzerine beyaz yazı oluyordu. */
+        html[data-client-theme="light"] .form-control { background: #fff; border-color: #d7e0ee; color: #172033; }
+        html[data-client-theme="light"] .form-control::placeholder { color: #94a3b8; }
+        html[data-client-theme="light"] .form-control:focus { border-color: var(--primary); background: #fff; }
+        html[data-client-theme="light"] select.form-control option { background: #fff; color: #172033; }
+
+        html[data-client-theme="light"] .badge-success { background: #dcfce7; color: #15803d; border-color: #86efac; }
+        html[data-client-theme="light"] .badge-warning { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
+        html[data-client-theme="light"] .badge-danger { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+        html[data-client-theme="light"] .badge-info { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+        html[data-client-theme="light"] .badge-gray { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+
+        html[data-client-theme="light"] .alert-success { background: #ecfdf5; color: #15803d; border-color: #a7f3d0; }
+        html[data-client-theme="light"] .alert-warning { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+        html[data-client-theme="light"] .alert-danger { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
     </style>
 </head>
 
