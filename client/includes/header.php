@@ -307,7 +307,12 @@ $openTicketsCount = (int) Database::fetchColumn("SELECT COUNT(*) FROM tickets WH
             color: #fff !important;
         }
 
+        /* .nav-link:hover (0,2,0) bu butonun (0,1,0) yesil zeminini
+           eziyordu; hoverda beyaza donup kayboluyordu. Zemin burada
+           yeniden veriliyor. */
         .nav-link-order:hover {
+            background: linear-gradient(135deg, #0ea472, #047857);
+            color: #fff !important;
             transform: translateY(-2px);
             box-shadow: 0 5px 20px rgba(16, 185, 129, 0.3);
         }
